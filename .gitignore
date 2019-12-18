@@ -1,0 +1,6 @@
+__pycache__/
+venv/
+time_measure/data/cifar-10
+time_measure/data/mnist
+time_measure/data/fashion
+time_measure/data/google
