@@ -104,10 +104,10 @@ def draw_plot(x, y, item, filename):
     cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
     cbar.set_ticks(np.arange(10))
     cbar.set_ticklabels(item)
-    plt.title('Fashion MNIST Embedded')
+    # plt.title('Fashion MNIST Embedded')
     plt.savefig("./{}.png".format(filename))
 
-def run_umap(x, y, item, n_neighbors_list, min_dist=0.3, metric="euclidean", verbose=True):
+def run_umap(x, y, item, n_neighbors_list, min_dist=0.05, metric="euclidean", verbose=True):
     for i in n_neighbors_list:
         print("UMAP NEIGHBOR NUMBER: ", i)
         x_umap = umap.UMAP(n_neighbors=i, min_dist=min_dist, metric=metric, verbose=verbose).fit_transform(x)
@@ -127,25 +127,25 @@ if __name__ == "__main__":
     # # TOY DATA # (1797, 64)
     # from sklearn.datasets import load_digits
     # digits = load_digits()
-    # umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(digits.data)
+    # umap.UMAP(n_neighbors=5, min_dist=0.3, local_connectivity=1, metric='correlation', verbose=True).fit_transform(digits.data)
 
-    # FASHION MNIST (6-70000, 784), 26MB
-    # https://github.com/zalandoresearch/fashion-mnist
-    x, y = load_mnist('data/fashion', kind='train')
-    x_test, y_test = load_mnist('data/fashion', kind='t10k')
-    x = np.append(x, x_test, axis=0)
-    y = np.append(y, y_test, axis=0)
-    # x = pca(x, no_dims=300).real
-    item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
+    # # FASHION MNIST (6-70000, 784), 26MB
+    # # https://github.com/zalandoresearch/fashion-mnist
+    # x, y = load_mnist('data/fashion', kind='train')
+    # x_test, y_test = load_mnist('data/fashion', kind='t10k')
+    # x = np.append(x, x_test, axis=0)
+    # y = np.append(y, y_test, axis=0)
+    # # x = pca(x, no_dims=300).real
+    # item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
-    # UMAP run
-    run_umap(x=x, y=y, item=item, n_neighbors_list=[2,5,10,20,50])
-    # run_umap2(x=x, y=y, item=item, min_dist_list=[0.1,0.05, 0.01])
-    x_umap = umap.UMAP(n_neighbors=10, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x)
-    draw_plot(x_umap, y, item, "umap_result")
-    # t-SNE run
-    x_tse = run_tsne(x)
-    draw_plot(x_tse, y, item, "tsne_result")
+    # # UMAP run
+    # run_umap(x=x, y=y, item=item, n_neighbors_list=[2,5,10,20,50])
+    # # run_umap2(x=x, y=y, item=item, min_dist_list=[0.1,0.05, 0.01])
+    # x_umap = umap.UMAP(n_neighbors=10, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x)
+    # draw_plot(x_umap, y, item, "umap_result")
+    # # t-SNE run
+    # x_tse = run_tsne(x)
+    # draw_plot(x_tse, y, item, "tsne_result")
 
     # CIFAR 10 (60000, 3072), 163MB
     # http://www.cs.toronto.edu/~kriz/cifar.html
@@ -155,21 +155,22 @@ if __name__ == "__main__":
     item2 = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
 
     # UMAP run
-    x_umap2 = umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x2)
-    draw_plot(x_umap2, y2, item2, "umap_result2")
-    # t-SNE run
-    x_tse2 = run_tsne(x2)
-    draw_plot(x_tse2, y2, item2, "tsne_result2")
+    run_umap(x=x2, y=y2, item=item2, n_neighbors_list=[2,5,20,50,100,200])
+    # x_umap2 = umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x2)
+    # draw_plot(x_umap2, y2, item2, "umap_result2")
+    # # t-SNE run
+    # x_tse2 = run_tsne(x2)
+    # draw_plot(x_tse2, y2, item2, "tsne_result2")
 
-    # WORD VECTOR (0.6M-3M, 300), 3.35GB
-    # https://www.kaggle.com/sandreds/googlenewsvectorsnegative300
-    word_vectors = KeyedVectors.load_word2vec_format('./data/google/GoogleNews-vectors-negative300.bin', binary=True)
-    x3 = word_vectors.vectors[:600000,] # wv.shape (3,000,000, 300) -> (600,000, 300)
+    # # WORD VECTOR (0.6M-3M, 300), 3.35GB
+    # # https://www.kaggle.com/sandreds/googlenewsvectorsnegative300
+    # word_vectors = KeyedVectors.load_word2vec_format('./data/google/GoogleNews-vectors-negative300.bin', binary=True)
+    # x3 = word_vectors.vectors[:600000,] # wv.shape (3,000,000, 300) -> (600,000, 300)
 
-    # UMAP run
-    x_umap3 = umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x3)
-    # t-SNE run
-    x_tse3 = run_tsne(x3)
+    # # UMAP run
+    # x_umap3 = umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x3)
+    # # t-SNE run
+    # x_tse3 = run_tsne(x3)
 
     # plotData = data[33]
     # plotData = plotData.reshape(28, 28)
