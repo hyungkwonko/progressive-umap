@@ -154,9 +154,7 @@ def make_initialisations(dist, dist_args):
     return init_from_random, init_from_tree
 
 
-def initialise_search(
-    forest, data, query_points, n_neighbors, init_from_random, init_from_tree, rng_state
-):
+def initialise_search(forest, data, query_points, n_neighbors, init_from_random, init_from_tree, rng_state):
     results = make_heap(query_points.shape[0], n_neighbors)
     init_from_random(n_neighbors, data, query_points, results, rng_state)
     if forest is not None:

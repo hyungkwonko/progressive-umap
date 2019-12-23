@@ -155,7 +155,7 @@ if __name__ == "__main__":
     item2 = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
 
     # UMAP run
-    run_umap(x=x2, y=y2, item=item2, n_neighbors_list=[2,5,20,50,100,200])
+    run_umap(x=x2, y=y2, item=item2, n_neighbors_list=[5,20,50,100,200])
     # x_umap2 = umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x2)
     # draw_plot(x_umap2, y2, item2, "umap_result2")
     # # t-SNE run

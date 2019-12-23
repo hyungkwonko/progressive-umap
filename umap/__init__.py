@@ -1,4 +1,5 @@
-from .umap_ import UMAP
+# from .umap_ import UMAP
+from .umap_panene import UMAP
 
 # Workaround: https://github.com/numba/numba/issues/3341
 import numba
