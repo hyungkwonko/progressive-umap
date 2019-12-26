@@ -1,6 +1,0 @@
-{
-  "python.pythonPath": "/home/hkko/PUMAP/progressive-umap/venv/bin/python3.7",
-  "python.autoComplete.extraPaths": [
-    "/home/hkko/PUMAP/progressive-umap/venv/lib",
-  ],
-}
