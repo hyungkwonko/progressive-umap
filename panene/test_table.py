@@ -2,7 +2,6 @@ from pynene import KNNTable
 import numpy as np
 import unittest
 
-
 def random_vectors(n=100, d=10, dtype=np.float32):
     return np.array(np.random.rand(n, d), dtype=dtype)
 
