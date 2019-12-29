@@ -182,9 +182,9 @@ def test_run2():
 
 if __name__ == "__main__":
 
-  test_index()
-  test_add_points()
-  test_knn_search()
-  test_knn_search_points()
-  test_run()
+  # test_index()
+  # test_add_points()
+  # test_knn_search()
+  # test_knn_search_points()
+  # test_run()
   test_run2()
