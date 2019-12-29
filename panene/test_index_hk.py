@@ -127,17 +127,17 @@ def test_run():
 
   Parameters
   ----------
-  ops: number of points to add
+  ops: number of ops
 
   Returns
   -------
   numPointsInserted: total number of points inserted
-  addPointOps: ?
-  updateIndexOps: 
-  addPointResult: ?
-  updateIndexResult: 
-  addPointElapsed: 
-  updateIndexElapsed: 
+  addPointOps: number of ops allocated to add
+  updateIndexOps: number of ops allocated to update index
+  addPointResult: number of added points
+  updateIndexResult: ?
+  addPointElapsed: time elapsed for add
+  updateIndexElapsed: time elapsed for update index
   """
   x = random_vectors(n=30, d=3)
   index = Index(x, w=(0.5, 0.5))
