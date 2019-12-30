@@ -86,8 +86,11 @@ def test_table(n=30, d=10, k=5, ops=30):
     
   updates = table.run(ops)
   print(updates)
-  # print(neighbors)
+  print(neighbors)
   # print(distances)
+  updates = table.run(ops)
+  print(updates)
+  print(neighbors)
 
 def test_incremental_run(n=1000, d=10, k=5, ops=100):
   """
@@ -135,6 +138,6 @@ def test_updates_after_all_points_added(n=100, d=10, k=5, w = (0.5, 0.5), ops=10
 
 if __name__ == "__main__":
   # test_table_size()
-  # test_table()
+  test_table()
   # test_incremental_run()
-  test_updates_after_all_points_added()
+  # test_updates_after_all_points_added()
