@@ -50,117 +50,6 @@ SMOOTH_K_TOLERANCE = 1e-5
 MIN_K_DIST_SCALE = 1e-3
 NPY_INFINITY = np.inf
 
-def update_similarity(table, neighbors, similarities, Y, no_dim, perplexity, K, ops, ee_factor=1):
-    '''
-    UPDATE_SIMILARITY 
-    ----------
-    1. update KNN Table (i.e., table->run(ops))
-    -) compute val_P for points 
-        1) newly inserted (ar.addPointResult, # = table.getSize() - ar.addPointResult)
-        2) updated (=dirty points, ar.updatePointResult)
-    2. collect all ids: 1) & 2) => ar.updatedIds
-    3. set initial positions of newly added points (ar.updatePointResult)
-        - locate them based on the mean value of their neighbors
-        - another method ?
-    4. update perplexities for points in 1) & 2) => ar.updatedIds
-    5. make the adjacency matrix symmetric
-
-    Parameters
-    ----------
-    table: KNNTable
-    neighbors: (n, k = number of neighbors) neighbor distance 2d array
-    similarities: (n, n) adjacency matrix (2d array) to be optimized
-    Y: (n * output_dimension) array
-    no_dims: input dimension
-    perplexity: a perplexity value (e.g., 2.51)
-    K: number of neighbors (?)
-    ops: number of ops
-    ee_factor: early exaggeration factor
-
-    Returns
-    -------
-    None
-    '''
-    return 0
-
-def compute_gradient(similarities, Y, N, D, dY, theta, ee_factor):
-    '''
-    COMPUTE_GRADIENT 
-    ----------
-    Compute gradient of Y per each iteration
-
-    Parameters
-    ----------
-    similarities: (n, n) adjacency matrix (2d array)
-    Y: embedded output = (n * no_dims) 2D array
-    N: number of rows
-    D: input dimension
-    dY: gradient
-    theta: 
-    ee_factor: early exaggeration factor
-
-    Returns
-    -------
-    None
-    '''
-    return 0
-
-def evaluate_error(similarities, Y, N, D, theta, ee_factor):
-    '''
-    EVALUATE ERROR 
-    ----------
-    evaluate UMAP cost function (approximately)
-
-    Parameters
-    ----------
-    similarities: (n, n) adjacency matrix (2d array)
-    Y: embedded output = (n * no_dims) 2D array
-    N: number of rows
-    D: input dimension
-    theta: 
-    ee_factor: early exaggeration factor
-
-    Returns
-    -------
-    C: cost
-    '''
-    return 0
-
-def run(X, N, D, Y, no_dims, perplexity, theta, rand_seed, max_iter):
-    '''
-    RUN 
-    ----------
-    Progressively perform UMAP using PANENE's KNN Table
-
-    1. initialize KNN Table
-    2. Normalize input data
-    3. (randomly) initialize Y
-    4. run iteration (max_iter)
-        - calculate early exaggeration factor
-        - if size < N (left points are waiting to be added)
-            - update similarity matrix (update_similarity())
-        - compute gradient (compute_graident())
-        - update gradient
-        - recalculate cost & update Y
-
-    Parameters
-    ----------
-    X: 2D data array
-    N: number of rows
-    D: input dimension
-    Y: embedded output = (n * no_dims) 2D array
-    no_dims: output dimension
-    perplexity: a perplexity value (e.g., 2.51)
-    theta: 
-    rand_seed: 
-    max_iter: maximum iteration number
-
-    Returns
-    -------
-    None
-    '''
-    return 0
-
 @measure_time
 @numba.njit(
     fastmath=True
@@ -1176,6 +1065,67 @@ def find_ab_params(spread, min_dist):
     return params[0], params[1]
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def compute_gradient(similarities, Y, N, D, dY, theta, ee_factor):
+    '''
+    COMPUTE_GRADIENT 
+    ----------
+    Compute gradient of Y per each iteration
+
+    Parameters
+    ----------
+    similarities: (n, n) adjacency matrix (2d array)
+    Y: embedded output = (n * no_dims) 2D array
+    N: number of rows
+    D: input dimension
+    dY: gradient
+    theta: 
+    ee_factor: early exaggeration factor
+
+    Returns
+    -------
+    None
+    '''
+    return 0
+
+def evaluate_error(similarities, Y, N, D, theta, ee_factor):
+    '''
+    EVALUATE ERROR 
+    ----------
+    evaluate UMAP cost function (approximately)
+
+    Parameters
+    ----------
+    similarities: (n, n) adjacency matrix (2d array)
+    Y: embedded output = (n * no_dims) 2D array
+    N: number of rows
+    D: input dimension
+    theta: 
+    ee_factor: early exaggeration factor
+
+    Returns
+    -------
+    C: cost
+    '''
+    return 0
+
+
 class UMAP(BaseEstimator):
     """Uniform Manifold Approximation and Projection
 
@@ -1455,10 +1405,6 @@ class UMAP(BaseEstimator):
             ``target_metric_kwds``.
         """
         
-        # if self.verbose:
-        #     umap_start = ts()
-        #     print(ts(), "UMAP START")
-
         X = check_array(X, dtype=np.float32, accept_sparse="csr")
         self._raw_data = X
 
@@ -1517,7 +1463,6 @@ class UMAP(BaseEstimator):
         random_state = check_random_state(self.random_state)
 
         if self.verbose:
-            # fuzzy_start = ts()
             print("Construct fuzzy simplicial set")
 
         # Handle small cases efficiently by computing all distances
@@ -1695,21 +1640,138 @@ class UMAP(BaseEstimator):
         
         return self
 
-    def fit2(self, X, y=None):
-        print("XXXXXX")
-        print(X.shape[0])
-        print(X.shape[1])
-        n = X.shape[0]
-        k = 5
-        ops = 500
-        neighbors = np.zeros((n, k), dtype=np.int64) # with np.in32, it is not optimized
-        distances = np.zeros((n, k), dtype=np.float32)
-        table = KNNTable(X, k, neighbors, distances)
-        print(table)
-        updates = table.run(ops)
-        print(updates)
-        print(neighbors)
-        # print(distances)
+
+
+    # PANENE IMPLEMENTATION
+    # def update_similarity(table, neighbors, similarities, Y, no_dims, perplexity=10, K, ops, ee_factor=1):
+    def update_similarity(self, ops):
+        '''
+        UPDATE_SIMILARITY 
+        ----------
+        1. update KNN Table (i.e., table->run(ops))
+        -) compute val_P for points 
+            1) newly inserted (ar.addPointResult, # = table.getSize() - ar.addPointResult)
+            2) updated (=dirty points, ar.updatePointResult)
+        2. collect all ids: 1) & 2) => ar.updatedIds
+        3. set initial positions of newly added points (ar.updatePointResult)
+            - locate them based on the mean value of their neighbors
+            - another method ?
+        4. update perplexities for points in 1) & 2) => ar.updatedIds
+        5. make the adjacency matrix symmetric
+
+        Parameters
+        ----------
+        table: KNNTable
+        neighbors: (n, k = number of neighbors) neighbor distance 2d array
+        similarities: (n, n) adjacency matrix (2d array) to be optimized
+        Y: (n * output_dimension) array
+        no_dims: output dimension
+        perplexity: a perplexity value (e.g., 2.51)
+        K: number of neighbors (?)
+        ops: number of ops
+        ee_factor: early exaggeration factor
+
+        Returns
+        -------
+        None
+        '''
+
+        # run for given number of ops
+        updates = self.table.run(ops)
+
+        # dirty points (updated IDs of current table compared to the previous table)
+        updatedIds = list(updates['updatedIds'])
+
+        for i in range(self.table.size()-updates['addPointResult'], self.table.size()):
+            # append newly inserted points
+            updatedIds.append(i)
+
+            # overwrite random values with 0
+            for j in range(self.n_components):
+               self.Y[i][j] = 0
+
+            # set their initial points to the mean of its neighbors
+            for k in range(1, self.K):
+                for j in range(self.n_components):
+                    self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.K # or divide by (self.K - 1)??
+        
+        for i in updatedIds:
+            print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
+
+            '''
+            should call (modified) smooth_knn_dist that can progressively compute
+            sigmas and rhos of selected items (have to make a new one!!)
+            '''
+
+            # smooth_knn_dist()
+
+
+    def run(self, X, y=None):
+        '''
+        RUN 
+        ----------
+        Progressively perform UMAP using PANENE's KNN Table
+
+        1. initialize KNN Table
+        2. Normalize input data
+        3. (randomly) initialize Y
+        4. run iteration (max_iter)
+            - calculate early exaggeration factor
+            - if size < N (left points are waiting to be added)
+                - update similarity matrix (update_similarity())
+            - compute gradient (compute_graident())
+            - update gradient
+            - recalculate cost & update Y
+
+        Parameters
+        ----------
+        X: 2D data array
+        N: number of rows
+        D: input dimension
+        Y: embedded output = (n * no_dims) 2D array
+        no_dims: output dimension
+        perplexity: a perplexity value (e.g., 2.51)
+        theta: 
+        rand_seed: 
+        max_iter: maximum iteration number
+
+        Returns
+        -------
+        None
+        '''
+
+        # check array: the input is checked to be a non-empty 2D array containing only finite values.
+        X = check_array(X, dtype=np.float32, accept_sparse="csr")
+        self._raw_data = X
+
+        # X = X
+        N = X.shape[0]
+        D = X.shape[1]
+        # Y = ?
+        self.K = self.n_neighbors # K = number of neighbors
+        no_dims = self.n_components # embedding dimension = usually 2
+        max_iter = 10
+        # self.learning_rate = learning_rate
+        # self.min_dist = min_dist
+        # self.local_connectivity = local_connectivity
+        ops = 30
+
+        # initialize table & neighbors & distances
+        self.indexes = np.zeros((N, self.K), dtype=np.int64) # with np.in32, it is not optimized
+        self.distances = np.zeros((N, self.K), dtype=np.float32)
+
+        # random initialize Y value
+        self.Y = np.array(np.random.rand(N, no_dims), dtype=np.float32)
+        self.table = KNNTable(X, self.K, self.indexes, self.distances)
+
+        # run iteration and work progressively
+        for iter in range(max_iter):
+
+            if(self.table.size() < N):
+                self.update_similarity(ops=ops)
+
+        return self
+
 
     @measure_time
     def fit_transform(self, X, y=None):
@@ -1734,7 +1796,7 @@ class UMAP(BaseEstimator):
             Embedding of the training data in low-dimensional space.
         """
         # self.fit(X, y)
-        self.fit2(X, y)
+        self.run(X, y)
         # return self.embedding_
 
     def transform(self, X):
@@ -1859,3 +1921,4 @@ class UMAP(BaseEstimator):
         )
 
         return embedding
+
