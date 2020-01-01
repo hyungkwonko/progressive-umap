@@ -87,11 +87,11 @@ def smooth_knn_dist(distances, k, n_iter=64, local_connectivity=1.0, bandwidth=1
 
     Returns
     -------
-    knn_dist: array of shape (n_samples,)
-        The distance to kth nearest neighbor, as suitably approximated.
+    result: array of shape(n_samples)
+        The normalization factor derived from the metric tensor approximation.
 
-    nn_dist: array of shape (n_samples,)
-        The distance to the 1st nearest neighbor for each point.
+    rho: array of shape(n_samples)
+        The local connectivity adjustment.
     """
     target = np.log2(k) * bandwidth # 2.3192...
     rho = np.zeros(distances.shape[0]) # (1797, 1)
@@ -1698,13 +1698,124 @@ class UMAP(BaseEstimator):
         for i in updatedIds:
             print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
 
-            '''
-            should call (modified) smooth_knn_dist that can progressively compute
-            sigmas and rhos of selected items (have to make a new one!!)
-            '''
+        '''
+        should call (modified) smooth_knn_dist that can progressively compute
+        sigmas and rhos of selected items (have to make a new one!!)
+        '''
+        # compute sigmas and rhos for dirty & newly inserted points
+        self.progressive_smooth_knn_dist(self.distances, updatedIds, self.K, n_iter=200,
+            local_connectivity=1.0, bandwidth=1.0)
+        print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
 
-            # smooth_knn_dist()
 
+
+
+    def progressive_smooth_knn_dist(self, distances, indexes, k, n_iter=64,
+        local_connectivity=1.0, bandwidth=1.0):
+        """Compute a continuous version of the distance to the kth nearest
+        neighbor for selected rows. That is, this is similar to knn-distance but
+        allows continuous k values rather than requiring an integral k. In essence
+        we are simply computing the distance such that the cardinality of fuzzy set
+        we generate is k.
+
+        Parameters
+        ----------
+        distances: array of shape (n_samples, n_neighbors)
+            Distances to nearest neighbors for each samples. Each row should be a
+            sorted list of distances to a given samples nearest neighbors.
+        
+        indexes: list
+            Indexes we are goint to update getting sigmas and rhos
+
+        k: float
+            The number of nearest neighbors to approximate for.
+
+        n_iter: int (optional, default 64)
+            We need to binary search for the correct distance value. This is the
+            max number of iterations to use in such a search.
+
+        local_connectivity: int (optional, default 1)
+            The local connectivity required -- i.e. the number of nearest
+            neighbors that should be assumed to be connected at a local level.
+            The higher this value the more connected the manifold becomes
+            locally. In practice this should be not more than the local intrinsic
+            dimension of the manifold.
+
+        bandwidth: float (optional, default 1)
+            The target bandwidth of the kernel, larger values will produce
+            larger return values.
+
+        Returns
+        -------
+        result: array of shape(n_samples)
+            The normalization factor derived from the metric tensor approximation.
+
+        rho: array of shape(n_samples)
+            The local connectivity adjustment.
+        """
+        target = np.log2(k) * bandwidth # 2.3192...
+
+        mean_distances = np.mean(self.distances[:self.table.size()])
+
+        for i in indexes:
+            lo = 0.0
+            hi = NPY_INFINITY
+            mid = 1.0
+
+            # TODO: This is very inefficient, but will do for now. FIXME
+            ## CALCULATE self.rhos[i]
+            ith_distances = self.distances[i] # ith_distances.shape = (1, 5)
+            non_zero_dists = ith_distances[ith_distances > 0.0] # select elements > 0.0
+            if non_zero_dists.shape[0] >= local_connectivity: # non_zero_dists.shape[0] = number of locally connected dots
+                index = int(np.floor(local_connectivity)) # local_connectivity = 1.0
+                interpolation = local_connectivity - index
+                if index > 0:
+                    self.rhos[i] = non_zero_dists[index - 1]
+                    if interpolation > SMOOTH_K_TOLERANCE: # SMOOTH_K_TOLERANCE = 1e-5
+                        self.rhos[i] += interpolation * (
+                            non_zero_dists[index] - non_zero_dists[index - 1]
+                        )
+                else: # if index == 0 (0 <= local_connectivity < 1)
+                    self.rhos[i] = interpolation * non_zero_dists[0]
+            elif non_zero_dists.shape[0] > 0:
+                self.rhos[i] = np.max(non_zero_dists)
+
+            ## CALCULATE self.sigmas[i]
+            for n in range(n_iter):
+
+                psum = 0.0
+                for j in range(1, self.K): # range(1,k) => 1,2,...,k-1
+                    d = self.distances[i, j] - self.rhos[i]
+                    if d > 0:
+                        psum += np.exp(-(d / mid))
+                    else:
+                        psum += 1.0
+
+                # break if it is lower than the threshold
+                if np.fabs(psum - target) < SMOOTH_K_TOLERANCE: # fabs: Compute the absolute values element-wise.
+                    break
+
+                if psum > target:
+                    hi = mid
+                    mid = (lo + hi) / 2.0
+                else:
+                    lo = mid
+                    if hi == NPY_INFINITY:
+                        mid *= 2
+                    else:
+                        mid = (lo + hi) / 2.0
+
+            self.sigmas[i] = mid
+
+            # TODO: This is very inefficient, but will do for now. FIXME
+            if self.rhos[i] > 0.0:
+                mean_ith_distances = np.mean(ith_distances)
+                if self.sigmas[i] < MIN_K_DIST_SCALE * mean_ith_distances:
+                    self.sigmas[i] = MIN_K_DIST_SCALE * mean_ith_distances
+            else:
+                if self.sigmas[i] < MIN_K_DIST_SCALE * mean_distances:
+                    self.sigmas[i] = MIN_K_DIST_SCALE * mean_distances
+                    
 
     def run(self, X, y=None):
         '''
@@ -1754,11 +1865,15 @@ class UMAP(BaseEstimator):
         # self.learning_rate = learning_rate
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
-        ops = 30
+        ops = 14
 
         # initialize table & neighbors & distances
         self.indexes = np.zeros((N, self.K), dtype=np.int64) # with np.in32, it is not optimized
         self.distances = np.zeros((N, self.K), dtype=np.float32)
+
+        # initialize sigmas and rhos
+        self.sigmas = np.zeros(N, dtype=np.float32)
+        self.rhos = np.zeros(N, dtype=np.float32)
 
         # random initialize Y value
         self.Y = np.array(np.random.rand(N, no_dims), dtype=np.float32)
@@ -1921,4 +2036,6 @@ class UMAP(BaseEstimator):
         )
 
         return embedding
+
+
 
