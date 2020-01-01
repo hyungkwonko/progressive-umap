@@ -1695,8 +1695,8 @@ class UMAP(BaseEstimator):
                 for j in range(self.n_components):
                     self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.K # or divide by (self.K - 1)??
         
-        for i in updatedIds:
-            print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
+        # for i in updatedIds:
+        #     print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
 
         '''
         should call (modified) smooth_knn_dist that can progressively compute
@@ -1705,9 +1705,37 @@ class UMAP(BaseEstimator):
         # compute sigmas and rhos for dirty & newly inserted points
         self.progressive_smooth_knn_dist(self.distances, updatedIds, self.K, n_iter=200,
             local_connectivity=1.0, bandwidth=1.0)
-        print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
+        # print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
 
+        '''
+        progressive_compute_membership_strengths + fuzzy_simplicial_set
+            save distances and make it symmetric
+        '''
+        self.progressive_compute_membership_strengths(updatedIds)
 
+    def progressive_compute_membership_strengths(self, indexes):
+        for Aid in indexes: # point A
+        # the neighbors of uid has been updated
+        # neighbors: vector<map<size_t, double>> = index, distance pair
+            for Bid in (self.indexes[Aid]): # point B
+
+                ix = np.where(self.indexes[Aid]==Bid)[0][0] # neighbor index of B in terms of A
+                sAB = self.distances[Aid][ix] # distance from A to B
+                sBA = 0 # we need to calculate the distance from B to A
+
+                if Aid in (self.indexes[Bid]): # if it is a neighbors (just double checking ?)
+                    ix2 = np.where(self.indexes[Bid]==Aid)[0][0] # neighbor index of A in terms of B
+                    sBA = self.distances[Bid][ix2]
+
+                print("Aid: {}, Bid: {}, distanceAtoB: {}, distanceBtoA: {}".format(Aid, Bid, sAB, sBA))
+
+                '''
+                need to make it symmetric
+                currently, the distances are the same,,, why?
+                '''
+                
+                # similarities[Aid][Bid] = (sAB + sBA) / 2; # make it symmetric
+                # similarities[Bid][Aid] = (sAB + sBA) / 2
 
 
     def progressive_smooth_knn_dist(self, distances, indexes, k, n_iter=64,
@@ -1861,7 +1889,7 @@ class UMAP(BaseEstimator):
         # Y = ?
         self.K = self.n_neighbors # K = number of neighbors
         no_dims = self.n_components # embedding dimension = usually 2
-        max_iter = 10
+        max_iter = 2
         # self.learning_rate = learning_rate
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
