@@ -1641,10 +1641,9 @@ class UMAP(BaseEstimator):
         return self
 
 
-
     # PANENE IMPLEMENTATION
     # def update_similarity(table, neighbors, similarities, Y, no_dims, perplexity=10, K, ops, ee_factor=1):
-    def update_similarity(self, ops):
+    def update_similarity(self, ops, set_op_mix_ratio=1.0):
         '''
         UPDATE_SIMILARITY 
         ----------
@@ -1682,7 +1681,7 @@ class UMAP(BaseEstimator):
         # dirty points (updated IDs of current table compared to the previous table)
         updatedIds = list(updates['updatedIds'])
 
-        for i in range(self.table.size()-updates['addPointResult'], self.table.size()):
+        for i in range(self.table.size() - updates['addPointResult'], self.table.size()):
             # append newly inserted points
             updatedIds.append(i)
 
@@ -1695,33 +1694,92 @@ class UMAP(BaseEstimator):
                 for j in range(self.n_components):
                     self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.K # or divide by (self.K - 1)??
         
-        for i in updatedIds:
-            print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
+        # for i in updatedIds:
+        #     print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
 
         # compute sigmas and rhos for dirty & newly inserted points
+        '''
+        EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
+        '''
         self.progressive_smooth_knn_dist(self.distances, updatedIds, self.K, n_iter=200,
             local_connectivity=1.0, bandwidth=1.0)
-        print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
-
-        '''
-        EARLY EXAGGERATION SKIPPED
-        '''
-
-        '''
-        NEED TO UPDATE SIMILARITY MATRIX (COO STYLE -> ADJACENCY MATRIX)
-        '''
+        # print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
 
 
+        # progressive_compute_membership_strengths
+        self.progressive_compute_membership_strengths(updatedIds)
+
+        result = scipy.sparse.coo_matrix(
+            (self.vals, (self.rows, self.cols)), shape=(self.N, self.N)
+        ) # result.shape = (n, n) adjacency matrix
+        result.eliminate_zeros()
+
+        transpose = result.transpose()
+
+        prod_matrix = result.multiply(transpose)
+
+        # make it symmetric
+        result = (
+            set_op_mix_ratio * (result + transpose - prod_matrix)
+            + (1.0 - set_op_mix_ratio) * prod_matrix
+        )
+
+        result.eliminate_zeros()
+
+        # print(result)
+
+        return result # return COO matrix
 
 
+    def progressive_compute_membership_strengths(self, updatedIds):
+        """For selected indexes, construct the membership strength data for the 1-skeleton
+        of each local fuzzy simplicial set -- this is formed as a sparse matrix where each
+        row is a local fuzzy simplicial set, with a membership strength for the 1-simplex
+        to each other data point.
+
+        Parameters
+        ----------
+        updatedIds: list
+            indexes that need to be updated
+
+        Returns
+        -------
+        rows: array of shape (n_samples * n_neighbors)
+            Row data for the resulting sparse matrix (coo format)
+
+        cols: array of shape (n_samples * n_neighbors)
+            Column data for the resulting sparse matrix (coo format)
+
+        vals: array of shape (n_samples * n_neighbors)
+            Entries for the resulting sparse matrix (coo format)
+        """
+
+        for Aid in updatedIds: # point A
+            # the neighbors of Aid has been updated
+            for Bid in (self.indexes[Aid]): # point B
+
+                # index of B (e.g., indexes: [0 3 9 2 1] -> ix: [0 1 2 3 4])
+                ix = np.where(self.indexes[Aid]==Bid)[0]
+                
+                if(len(ix) < 1):
+                    raise ValueError("We didn't get the full knn for i")
+                ix = ix[0]
+
+                if self.indexes[Aid, ix] == Aid:
+                    val = 0.0
+                elif self.distances[Aid, ix] - self.rhos[Aid] <= 0.0:
+                    val = 1.0
+                else:
+                    val = np.exp(-((self.distances[Aid, ix] - self.rhos[Aid]) / (self.sigmas[Aid])))
+
+                self.rows[Aid * self.K + ix] = Aid
+                self.cols[Aid * self.K + ix] = Bid # self.indexes[Aid, ix]
+                self.vals[Aid * self.K + ix] = val # sum of the vals = log2(k)*bandwidth
+
+                # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
 
 
-
-
-
-
-
-    def progressive_smooth_knn_dist(self, distances, indexes, k, n_iter=64,
+    def progressive_smooth_knn_dist(self, distances, updatedIds, k, n_iter=64,
         local_connectivity=1.0, bandwidth=1.0):
         """Compute a continuous version of the distance to the kth nearest
         neighbor for selected rows. That is, this is similar to knn-distance but
@@ -1735,7 +1793,7 @@ class UMAP(BaseEstimator):
             Distances to nearest neighbors for each samples. Each row should be a
             sorted list of distances to a given samples nearest neighbors.
         
-        indexes: list
+        updatedIds: list
             Indexes we are goint to update getting sigmas and rhos
 
         k: float
@@ -1768,7 +1826,7 @@ class UMAP(BaseEstimator):
 
         mean_distances = np.mean(self.distances[:self.table.size()])
 
-        for i in indexes:
+        for i in updatedIds:
             lo = 0.0
             hi = NPY_INFINITY
             mid = 1.0
@@ -1867,34 +1925,41 @@ class UMAP(BaseEstimator):
         self._raw_data = X
 
         # X = X
-        N = X.shape[0]
+        self.N = X.shape[0]
         D = X.shape[1]
         # Y = ?
         self.K = self.n_neighbors # K = number of neighbors
         no_dims = self.n_components # embedding dimension = usually 2
-        max_iter = 10
+        max_iter = 3
         # self.learning_rate = learning_rate
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         ops = 14
 
         # initialize table & neighbors & distances
-        self.indexes = np.zeros((N, self.K), dtype=np.int64) # with np.in32, it is not optimized
-        self.distances = np.zeros((N, self.K), dtype=np.float32)
+        self.indexes = np.zeros((self.N, self.K), dtype=np.int64) # with np.in32, it is not optimized
+        self.distances = np.zeros((self.N, self.K), dtype=np.float32)
 
         # initialize sigmas and rhos
-        self.sigmas = np.zeros(N, dtype=np.float32)
-        self.rhos = np.zeros(N, dtype=np.float32)
+        self.sigmas = np.zeros(self.N, dtype=np.float32)
+        self.rhos = np.zeros(self.N, dtype=np.float32)
 
-        # random initialize Y value
-        self.Y = np.array(np.random.rand(N, no_dims), dtype=np.float32)
+        # initialize random Y value
+        self.Y = np.array(np.random.rand(self.N, no_dims), dtype=np.float32)
         self.table = KNNTable(X, self.K, self.indexes, self.distances)
+
+        # initialize elements of COO matrix
+        self.rows = np.zeros((self.N * self.K), dtype=np.int64)
+        self.cols = np.zeros((self.N * self.K), dtype=np.int64)
+        self.vals = np.zeros((self.N * self.K), dtype=np.float32)
 
         # run iteration and work progressively
         for iter in range(max_iter):
 
-            if(self.table.size() < N):
-                self.update_similarity(ops=ops)
+            if(self.table.size() < self.N):
+                # get COO formatted adjacency matrix
+                adj_matrix = self.update_similarity(ops=ops)
+                print("adj matrix return success!")
 
         return self
 
