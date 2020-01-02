@@ -1698,14 +1698,25 @@ class UMAP(BaseEstimator):
         for i in updatedIds:
             print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
 
-        '''
-        should call (modified) smooth_knn_dist that can progressively compute
-        sigmas and rhos of selected items (have to make a new one!!)
-        '''
         # compute sigmas and rhos for dirty & newly inserted points
         self.progressive_smooth_knn_dist(self.distances, updatedIds, self.K, n_iter=200,
             local_connectivity=1.0, bandwidth=1.0)
         print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
+
+        '''
+        EARLY EXAGGERATION SKIPPED
+        '''
+
+        '''
+        NEED TO UPDATE SIMILARITY MATRIX (COO STYLE -> ADJACENCY MATRIX)
+        '''
+
+
+
+
+
+
+
 
 
 
