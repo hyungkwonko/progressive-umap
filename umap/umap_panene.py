@@ -989,7 +989,7 @@ def simplicial_set_embedding(
 
     rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
     
-    # optimize_start = ts()
+    optimize_start = ts()
     
     embedding = optimize_layout(
         embedding,
@@ -1008,8 +1008,8 @@ def simplicial_set_embedding(
         verbose=verbose,
     )
     
-    # optimize_end = ts()
-    # print(optimize_end - optimize_start, "OPTIMIZE TIME")
+    optimize_end = ts()
+    print(optimize_end - optimize_start, "OPTIMIZE TIME")
 
     return embedding
 
@@ -1710,8 +1710,8 @@ class UMAP(BaseEstimator):
         self.progressive_compute_membership_strengths(updatedIds)
 
         result = scipy.sparse.coo_matrix(
-            (self.vals, (self.rows, self.cols)), shape=(self.N, self.N)
-        ) # result.shape = (n, n) adjacency matrix
+            (self.vals, (self.rows, self.cols)), shape=(self.table.size(), self.table.size())
+        ) # COO matrix
         result.eliminate_zeros()
 
         transpose = result.transpose()
@@ -1959,7 +1959,81 @@ class UMAP(BaseEstimator):
             if(self.table.size() < self.N):
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=ops)
+                self.graph_ = adj_matrix
                 print("adj matrix return success!")
+
+        ######################
+        # Embedding
+        ######################
+        
+
+        # pseudo values for test
+        init = "random" # return errors when set to "spectral"
+        random_state = check_random_state(self.random_state)
+        self._initial_alpha = self.learning_rate
+        self._a, self._b = find_ab_params(self.spread, self.min_dist)
+        self._metric_kwds = {}
+        n_epochs = 0
+        self._raw_data = X[:self.table.size()]
+
+
+
+        print("==="*30)
+        print(self.table.size())
+        print(self._raw_data.shape)
+        print(self.n_components)
+        print("self.graph_.shape: ", self.graph_.shape)
+        print("self.graph_: ", self.graph_)
+        print(X.shape)
+
+
+
+
+        if self.verbose:
+            # embed_start = ts()
+            print(ts(), "Construct embedding")
+
+
+        print("==="*30)
+
+
+        self.embedding_ = simplicial_set_embedding(
+            self._raw_data,
+            self.graph_,
+            self.n_components,
+            self._initial_alpha,
+            self._a,
+            self._b,
+            self.repulsion_strength,
+            self.negative_sample_rate,
+            n_epochs,
+            init,
+            random_state,
+            self.metric,
+            self._metric_kwds,
+            self.verbose,
+        )
+
+        print("==="*30)
+
+        print(self.embedding_.shape) # return shape
+
+
+        if self.verbose:
+            # embed_end = ts()
+            print(ts(), " Finished embedding")
+
+        self._input_hash = joblib.hash(self._raw_data)
+        
+        # if self.verbose:
+            # umap_end = ts()
+            # umap_time = umap_end - umap_start
+            # embed_time = embed_end - embed_start
+            # fuzzy_time = fuzzy_end - fuzzy_start
+            # print(ts(), "UMAP END")
+            # print(fuzzy_time, "FUZZY TIME")
+            # print(embed_time, "EMBED TIME")
+            # print(umap_time, "UMAP TIME")
 
         return self
 
