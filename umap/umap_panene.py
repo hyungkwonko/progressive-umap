@@ -1886,6 +1886,154 @@ class UMAP(BaseEstimator):
                     self.sigmas[i] = MIN_K_DIST_SCALE * mean_distances
                     
 
+
+    def progressive_simplicial_set_embedding(self, data, graph, n_components, initial_alpha, a, b,
+    gamma, negative_sample_rate, n_epochs, init, random_state, metric, metric_kwds, verbose):
+        """Perform a fuzzy simplicial set embedding, using a specified
+        initialisation method and then minimizing the fuzzy set cross entropy
+        between the 1-skeletons of the high and low dimensional fuzzy simplicial
+        sets.
+
+        Parameters
+        ----------
+        data: array of shape (n_samples, n_features)
+            The source data to be embedded by UMAP.
+
+        graph: sparse matrix
+            The 1-skeleton of the high dimensional fuzzy simplicial set as
+            represented by a graph for which we require a sparse matrix for the
+            (weighted) adjacency matrix.
+
+        n_components: int
+            The dimensionality of the euclidean space into which to embed the data.
+
+        initial_alpha: float
+            Initial learning rate for the SGD.
+
+        a: float
+            Parameter of differentiable approximation of right adjoint functor
+
+        b: float
+            Parameter of differentiable approximation of right adjoint functor
+
+        gamma: float
+            Weight to apply to negative samples.
+
+        negative_sample_rate: int (optional, default 5)
+            The number of negative samples to select per positive sample
+            in the optimization process. Increasing this value will result
+            in greater repulsive force being applied, greater optimization
+            cost, but slightly more accuracy.
+
+        n_epochs: int (optional, default 0)
+            The number of training epochs to be used in optimizing the
+            low dimensional embedding. Larger values result in more accurate
+            embeddings. If 0 is specified a value will be selected based on
+            the size of the input dataset (200 for large datasets, 500 for small).
+
+        init: string
+            How to initialize the low dimensional embedding. Options are:
+                * 'spectral': use a spectral embedding of the fuzzy 1-skeleton
+                * 'random': assign initial embedding positions at random.
+                * A numpy array of initial embedding positions.
+
+        random_state: numpy RandomState or equivalent
+            A state capable being used as a numpy random state.
+
+        metric: string
+            The metric used to measure distance in high dimensional space; used if
+            multiple connected components need to be layed out.
+
+        metric_kwds: dict
+            Key word arguments to be passed to the metric function; used if
+            multiple connected components need to be layed out.
+
+        verbose: bool (optional, default False)
+            Whether to report information on the current progress of the algorithm.
+
+        Returns
+        -------
+        embedding: array of shape (n_samples, n_components)
+            The optimized of ``graph`` into an ``n_components`` dimensional
+            euclidean space.
+        """
+        graph = graph.tocoo()
+        graph.sum_duplicates()
+        n_vertices = graph.shape[1]
+
+        if n_epochs <= 0:
+            # For smaller datasets we can use more epochs
+            if graph.shape[0] <= 10000:
+                n_epochs = 500
+            else:
+                n_epochs = 200
+
+        graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
+        graph.eliminate_zeros()
+
+        if isinstance(init, str) and init == "random":
+            embedding = random_state.uniform(
+                low=-10.0, high=10.0, size=(graph.shape[0], n_components)
+            ).astype(np.float32)
+        elif isinstance(init, str) and init == "spectral":
+            # We add a little noise to avoid local minima for optimization to come
+            initialisation = spectral_layout(
+                data,
+                graph,
+                n_components,
+                random_state,
+                metric=metric,
+                metric_kwds=metric_kwds,
+            )
+            expansion = 10.0 / np.abs(initialisation).max()
+            embedding = (initialisation * expansion).astype(
+                np.float32
+            ) + random_state.normal(
+                scale=0.0001, size=[graph.shape[0], n_components]
+            ).astype(
+                np.float32
+            )
+        else:
+            init_data = np.array(init)
+            if len(init_data.shape) == 2:
+                if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
+                    tree = KDTree(init_data)
+                    dist, ind = tree.query(init_data, k=2)
+                    nndist = np.mean(dist[:, 1])
+                    embedding = init_data + random_state.normal(
+                        scale=0.001 * nndist, size=init_data.shape
+                    ).astype(np.float32)
+                else:
+                    embedding = init_data
+
+
+        epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
+
+        head = graph.row
+        tail = graph.col
+
+        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
+        
+        embedding = optimize_layout(
+            embedding,
+            embedding,
+            head,
+            tail,
+            n_epochs,
+            n_vertices,
+            epochs_per_sample,
+            a,
+            b,
+            rng_state,
+            gamma,
+            initial_alpha,
+            negative_sample_rate,
+            verbose=verbose,
+        )
+        
+        return embedding
+
+
     def run(self, X, y=None):
         '''
         RUN 
@@ -1953,88 +2101,70 @@ class UMAP(BaseEstimator):
         self.cols = np.zeros((self.N * self.K), dtype=np.int64)
         self.vals = np.zeros((self.N * self.K), dtype=np.float32)
 
-        # run iteration and work progressively
-        for iter in range(max_iter):
-
-            if(self.table.size() < self.N):
-                # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops)
-                self.graph_ = adj_matrix
-                print("adj matrix return success!")
-
-        ######################
-        # Embedding
-        ######################
-        
-
-        # pseudo values for test
+        # initializing embedding position (pseudo values for test)
         init = "random" # return errors when set to "spectral"
         random_state = check_random_state(self.random_state)
         self._initial_alpha = self.learning_rate
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
         n_epochs = 0
-        self._raw_data = X[:self.table.size()]
 
+        # run iteration and work progressively
+        for _ in range(max_iter):
+            if(self.table.size() < self.N):
+                # get COO formatted adjacency matrix
+                adj_matrix = self.update_similarity(ops=ops)
+                self.graph_ = adj_matrix
+                print("adj matrix return success!")
 
+                ######################
+                # Embedding
+                ######################
 
-        print("==="*30)
-        print(self.table.size())
-        print(self._raw_data.shape)
-        print(self.n_components)
-        print("self.graph_.shape: ", self.graph_.shape)
-        print("self.graph_: ", self.graph_)
-        print(X.shape)
+                # Set initiail position
 
+                # Compute gradient
 
+                # update gains
 
+                # perform gradient update
+                
+                # normalize Y (DO WE HAVE TO ??)
 
-        if self.verbose:
-            # embed_start = ts()
-            print(ts(), "Construct embedding")
+                # print out progress
+                
+                # THE END
+                
+                print(self.table.size())
+                print(self._raw_data.shape)
+                print(self.n_components)
+                print(X.shape)
 
+                print("==="*30)
 
-        print("==="*30)
+                self.embedding_ = self.progressive_simplicial_set_embedding(
+                    X[:self.table.size()],
+                    self.graph_,
+                    self.n_components,
+                    self._initial_alpha,
+                    self._a,
+                    self._b,
+                    self.repulsion_strength,
+                    self.negative_sample_rate,
+                    n_epochs,
+                    init,
+                    random_state,
+                    self.metric,
+                    self._metric_kwds,
+                    self.verbose,
+                )
 
+                print("==="*30)
 
-        self.embedding_ = simplicial_set_embedding(
-            self._raw_data,
-            self.graph_,
-            self.n_components,
-            self._initial_alpha,
-            self._a,
-            self._b,
-            self.repulsion_strength,
-            self.negative_sample_rate,
-            n_epochs,
-            init,
-            random_state,
-            self.metric,
-            self._metric_kwds,
-            self.verbose,
-        )
+                print(self.embedding_.shape) # return shape
 
-        print("==="*30)
-
-        print(self.embedding_.shape) # return shape
-
-
-        if self.verbose:
-            # embed_end = ts()
-            print(ts(), " Finished embedding")
-
-        self._input_hash = joblib.hash(self._raw_data)
+                self._input_hash = joblib.hash(self._raw_data)
         
-        # if self.verbose:
-            # umap_end = ts()
-            # umap_time = umap_end - umap_start
-            # embed_time = embed_end - embed_start
-            # fuzzy_time = fuzzy_end - fuzzy_start
-            # print(ts(), "UMAP END")
-            # print(fuzzy_time, "FUZZY TIME")
-            # print(embed_time, "EMBED TIME")
-            # print(umap_time, "UMAP TIME")
-
         return self
 
 
