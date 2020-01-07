@@ -971,6 +971,7 @@ def simplicial_set_embedding(
     graph = graph.tocoo()
     graph.sum_duplicates()
     n_vertices = graph.shape[1]
+    print(f"n_vertices: {n_vertices}")
 
     if n_epochs <= 0:
         # For smaller datasets we can use more epochs
@@ -1009,20 +1010,26 @@ def simplicial_set_embedding(
         if len(init_data.shape) == 2:
             if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
                 tree = KDTree(init_data)
-                dist, ind = tree.query(init_data, k=2)
-                nndist = np.mean(dist[:, 1])
+                dist, ind = tree.query(init_data, k=2) # (n, k) distance, index
+                nndist = np.mean(dist[:, 1]) # this is just a mean value of the second column. WHY second column??
                 embedding = init_data + random_state.normal(
                     scale=0.001 * nndist, size=init_data.shape
-                ).astype(np.float32)
+                ).astype(np.float32) # add a noise 
             else:
                 embedding = init_data
 
     epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
+    print(f"epochs_per_sample: {epochs_per_sample}")
+    print(f"epochs_per_sample.shape: {epochs_per_sample.shape}")
+
 
     head = graph.row
     tail = graph.col
+    print(f"graph.row.shape: {graph.row.shape}")
+    print(f"graph.col.shape: {graph.col.shape}")
 
-    rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
+
+    rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random integers
     
     # optimize_start = ts()
     

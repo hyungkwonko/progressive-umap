@@ -1092,7 +1092,7 @@ def compute_gradient(similarities, Y, N, D, dY, theta, ee_factor):
     Parameters
     ----------
     similarities: (n, n) adjacency matrix (2d array)
-    Y: embedded output = (n * no_dims) 2D array
+    Y: embedded output = (n_components) 2D array
     N: number of rows
     D: input dimension
     dY: gradient
@@ -1114,7 +1114,7 @@ def evaluate_error(similarities, Y, N, D, theta, ee_factor):
     Parameters
     ----------
     similarities: (n, n) adjacency matrix (2d array)
-    Y: embedded output = (n * no_dims) 2D array
+    Y: embedded output = (n * n_components) 2D array
     N: number of rows
     D: input dimension
     theta: 
@@ -1643,7 +1643,7 @@ class UMAP(BaseEstimator):
 
 
     # PANENE IMPLEMENTATION
-    # def update_similarity(table, neighbors, similarities, Y, no_dims, perplexity=10, K, ops, ee_factor=1):
+    # def update_similarity(table, neighbors, similarities, Y, self.n_components, perplexity=10, K, ops, ee_factor=1):
     def update_similarity(self, ops, set_op_mix_ratio, init):
         '''
         UPDATE_SIMILARITY 
@@ -1665,7 +1665,7 @@ class UMAP(BaseEstimator):
         neighbors: (n, k = number of neighbors) neighbor distance 2d array
         similarities: (n, n) adjacency matrix (2d array) to be optimized
         Y: (n * output_dimension) array
-        no_dims: output dimension
+        self.n_components: output dimension
         perplexity: a perplexity value (e.g., 2.51)
         K: number of neighbors (?)
         ops: number of ops
@@ -1695,10 +1695,10 @@ class UMAP(BaseEstimator):
                     self.Y[i][j] = random.random() # random value between 0 and 1
             elif init == "neighbor":
                 # set their initial points to the mean of its neighbors
-                for k in range(1, self.K):
+                for k in range(1, self.n_neighbors):
                     for j in range(self.n_components):
-                        self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.K
-                        # issue1: divide by (self.K - 1) ?
+                        self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.n_neighbors
+                        # issue1: divide by (self.n_neighbors - 1) ?
                         # issue2: add random noise after calculation ?
             else:
                 raise ValueError("Please check init value for embedding")
@@ -1706,17 +1706,13 @@ class UMAP(BaseEstimator):
         # for i in updatedIds:
         #     print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
 
-        print(self.Y)
-        print(self.Y.shape)
-
         # compute sigmas and rhos for dirty & newly inserted points
         '''
         EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
         '''
-        self.progressive_smooth_knn_dist(self.distances, updatedIds, self.K, n_iter=200,
+        self.progressive_smooth_knn_dist(self.distances, updatedIds, self.n_neighbors, n_iter=200,
             local_connectivity=1.0, bandwidth=1.0)
         # print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
-
 
         # progressive_compute_membership_strengths
         self.progressive_compute_membership_strengths(updatedIds)
@@ -1784,9 +1780,9 @@ class UMAP(BaseEstimator):
                 else:
                     val = np.exp(-((self.distances[Aid, ix] - self.rhos[Aid]) / (self.sigmas[Aid])))
 
-                self.rows[Aid * self.K + ix] = Aid
-                self.cols[Aid * self.K + ix] = Bid # self.indexes[Aid, ix]
-                self.vals[Aid * self.K + ix] = val # sum of the vals = log2(k)*bandwidth
+                self.rows[Aid * self.n_neighbors + ix] = Aid
+                self.cols[Aid * self.n_neighbors + ix] = Bid # self.indexes[Aid, ix]
+                self.vals[Aid * self.n_neighbors + ix] = val # sum of the vals = log2(k)*bandwidth
 
                 # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
 
@@ -1865,7 +1861,7 @@ class UMAP(BaseEstimator):
             for n in range(n_iter):
 
                 psum = 0.0
-                for j in range(1, self.K): # range(1,k) => 1,2,...,k-1
+                for j in range(1, self.n_neighbors): # range(1,k) => 1,2,...,k-1
                     d = self.distances[i, j] - self.rhos[i]
                     if d > 0:
                         psum += np.exp(-(d / mid))
@@ -1990,6 +1986,8 @@ class UMAP(BaseEstimator):
         epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
         epoch_of_next_sample = epochs_per_sample.copy()
 
+        print(f"epochs_per_sample: {epochs_per_sample}")
+
         for n in range(n_epochs):
             self.total_epochs += 1
 
@@ -2080,8 +2078,8 @@ class UMAP(BaseEstimator):
         X: 2D data array
         N: number of rows
         D: input dimension
-        Y: embedded output = (n * no_dims) 2D array
-        no_dims: output dimension
+        Y: embedded output = (n * self.n_components) 2D array
+        self.n_components: output dimension
         perplexity: a perplexity value (e.g., 2.51)
         theta: 
         rand_seed: 
@@ -2096,48 +2094,104 @@ class UMAP(BaseEstimator):
         X = check_array(X, dtype=np.float32, accept_sparse="csr")
         self._raw_data = X
 
-        # X = X
+        # Handle all the optional arguments, setting default
+        if self.a is None or self.b is None:
+            self._a, self._b = find_ab_params(self.spread, self.min_dist)
+        else:
+            self._a = self.a
+            self._b = self.b
+
+        if self.metric_kwds is not None:
+            self._metric_kwds = self.metric_kwds
+        else:
+            self._metric_kwds = {}
+
+        if self.target_metric_kwds is not None:
+            self._target_metric_kwds = self.target_metric_kwds
+        else:
+            self._target_metric_kwds = {}
+
+        if isinstance(self.init, np.ndarray):
+            init = check_array(self.init, dtype=np.float32, accept_sparse=False)
+        else:
+            init = self.init
+
+        self._initial_alpha = self.learning_rate
+
+        # Check parameters
+        self._validate_parameters()
+
+        if self.verbose:
+            print(str(self))
+            
+        # Error check n_neighbors based on data size
+        if X.shape[0] <= self.n_neighbors:
+            if X.shape[0] == 1:
+                self.embedding_ = np.zeros(
+                    (1, self.n_components)
+                )  # needed to sklearn comparability
+                return self
+
+            warn(
+                "n_neighbors is larger than the dataset size; truncating to "
+                "X.shape[0] - 1"
+            )
+            self._n_neighbors = X.shape[0] - 1
+        else:
+            self._n_neighbors = self.n_neighbors
+
+        if scipy.sparse.isspmatrix_csr(X):
+            if not X.has_sorted_indices:
+                X.sort_indices()
+            self._sparse_data = True
+        else:
+            self._sparse_data = False
+
+        # Set random seed
+        random_state = check_random_state(self.random_state)
+
+
+
+
+
+
+
+
         self.N = X.shape[0]
-        D = X.shape[1]
-        # Y = ?
-        self.K = self.n_neighbors # K = number of neighbors
-        no_dims = self.n_components # embedding dimension = usually 2
-        max_iter = 3
-        # self.learning_rate = learning_rate
+
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
+        max_iter = 3
         ops = 14
 
         # initialize table & neighbors & distances
-        self.indexes = np.zeros((self.N, self.K), dtype=np.int64) # with np.in32, it is not optimized
-        self.distances = np.zeros((self.N, self.K), dtype=np.float32)
+        self.indexes = np.zeros((self.N, self.n_neighbors), dtype=np.int64) # with np.in32, it is not optimized
+        self.distances = np.zeros((self.N, self.n_neighbors), dtype=np.float32)
 
         # initialize sigmas and rhos
         self.sigmas = np.zeros(self.N, dtype=np.float32)
         self.rhos = np.zeros(self.N, dtype=np.float32)
 
         # initialize random Y value
-        self.Y = np.array(np.random.rand(self.N, no_dims), dtype=np.float32)
-        self.table = KNNTable(X, self.K, self.indexes, self.distances)
+        self.Y = np.array(np.random.rand(self.N, self.n_components), dtype=np.float32)
+        self.table = KNNTable(X, self.n_neighbors, self.indexes, self.distances)
 
         # initialize elements of COO matrix
-        self.rows = np.zeros((self.N * self.K), dtype=np.int64)
-        self.cols = np.zeros((self.N * self.K), dtype=np.int64)
-        self.vals = np.zeros((self.N * self.K), dtype=np.float32)
+        self.rows = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
+        self.cols = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
+        self.vals = np.zeros((self.N * self.n_neighbors), dtype=np.float32)
 
         # initializing embedding position (pseudo values for test)
-        random_state = check_random_state(self.random_state)
-        self._initial_alpha = self.learning_rate
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
         self.total_epochs = 0
 
-        # run iteration and work progressively
+        # run iteration (work progressively)
         for _ in range(max_iter):
             if(self.table.size() < self.N):
 
                 # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
+                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="random")
                 self.graph_ = adj_matrix
                 print("adj matrix return success!")
 
@@ -2157,18 +2211,11 @@ class UMAP(BaseEstimator):
                 
                 # THE END
 
-                # For smaller datasets we can use more epochs
-                if self.graph_.shape[0] <= 10000:
-                    n_epochs = 500
-                else:
-                    n_epochs = 200
-                self.total_epochs += n_epochs
-
                 embedding = self.progressive_optimize_layout(
                     head_embedding=self.Y[:self.table.size()],
                     tail_embedding=self.Y[:self.table.size()],
                     graph=self.graph_,
-                    n_epochs=n_epochs,
+                    n_epochs=1,
                     a=self._a,
                     b=self._b,
                     random_state=random_state,
@@ -2179,14 +2226,12 @@ class UMAP(BaseEstimator):
                 # csr_graph = normalize(graph.tocsr(), norm="l1")
                 self.Y[:self.table.size()] = embedding
 
-
-
                 print(embedding)
-                print(embedding.shape) # return shape
-                print("==="*30)
+                # print(embedding.shape) # return shape
+                # print("==="*30)
 
                 self._input_hash = joblib.hash(self._raw_data)
-        
+
         return self
 
 
@@ -2212,8 +2257,8 @@ class UMAP(BaseEstimator):
         X_new : array, shape (n_samples, n_components)
             Embedding of the training data in low-dimensional space.
         """
-        # self.fit(X, y)
         self.run(X, y)
+        return self.Y[:self.table.size()]
         # return self.Y
 
     def transform(self, X):

@@ -7,4 +7,5 @@ if __name__ == "__main__":
   from sklearn.datasets import load_digits
   digits = load_digits()
   y = umap.UMAP(n_neighbors=5).fit_transform(digits['data'])
-  print(y)
+  # print(y)
+  print(f"y.shape: {y.shape}")
