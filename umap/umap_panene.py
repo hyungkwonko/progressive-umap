@@ -4,6 +4,7 @@
 from __future__ import print_function
 from warnings import warn
 import time
+import random
 
 from scipy.optimize import curve_fit
 from sklearn.base import BaseEstimator
@@ -1643,7 +1644,7 @@ class UMAP(BaseEstimator):
 
     # PANENE IMPLEMENTATION
     # def update_similarity(table, neighbors, similarities, Y, no_dims, perplexity=10, K, ops, ee_factor=1):
-    def update_similarity(self, ops, set_op_mix_ratio=1.0):
+    def update_similarity(self, ops, set_op_mix_ratio, init):
         '''
         UPDATE_SIMILARITY 
         ----------
@@ -1689,13 +1690,24 @@ class UMAP(BaseEstimator):
             for j in range(self.n_components):
                self.Y[i][j] = 0
 
-            # set their initial points to the mean of its neighbors
-            for k in range(1, self.K):
+            if init == "random":
                 for j in range(self.n_components):
-                    self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.K # or divide by (self.K - 1)??
-        
+                    self.Y[i][j] = random.random() # random value between 0 and 1
+            elif init == "neighbor":
+                # set their initial points to the mean of its neighbors
+                for k in range(1, self.K):
+                    for j in range(self.n_components):
+                        self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.K
+                        # issue1: divide by (self.K - 1) ?
+                        # issue2: add random noise after calculation ?
+            else:
+                raise ValueError("Please check init value for embedding")
+
         # for i in updatedIds:
         #     print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
+
+        print(self.Y)
+        print(self.Y.shape)
 
         # compute sigmas and rhos for dirty & newly inserted points
         '''
@@ -1887,28 +1899,38 @@ class UMAP(BaseEstimator):
                     
 
 
-    def progressive_simplicial_set_embedding(self, data, graph, n_components, initial_alpha, a, b,
-    gamma, negative_sample_rate, n_epochs, init, random_state, metric, metric_kwds, verbose):
-        """Perform a fuzzy simplicial set embedding, using a specified
-        initialisation method and then minimizing the fuzzy set cross entropy
-        between the 1-skeletons of the high and low dimensional fuzzy simplicial
-        sets.
+    def progressive_optimize_layout(
+        self,
+        head_embedding,
+        tail_embedding,
+        graph,
+        n_epochs,
+        a,
+        b,
+        random_state,
+        gamma=1.0,
+        initial_alpha=1.0,
+        negative_sample_rate=5.0,
+        verbose=False):
+        """Improve an embedding using stochastic gradient descent to minimize the
+        fuzzy set cross entropy between the 1-skeletons of the high dimensional
+        and low dimensional fuzzy simplicial sets. In practice this is done by
+        sampling edges based on their membership strength (with the (1-p) terms
+        coming from negative sampling similar to word2vec).
 
         Parameters
         ----------
-        data: array of shape (n_samples, n_features)
-            The source data to be embedded by UMAP.
+        head_embedding: array of shape (n_samples, n_components)
+            The initial embedding to be improved by SGD.
 
-        graph: sparse matrix
-            The 1-skeleton of the high dimensional fuzzy simplicial set as
-            represented by a graph for which we require a sparse matrix for the
-            (weighted) adjacency matrix.
+        tail_embedding: array of shape (source_samples, n_components)
+            The reference embedding of embedded points. If not embedding new
+            previously unseen points with respect to an existing embedding this
+            is simply the head_embedding (again); otherwise it provides the
+            existing embedding to embed with respect to.
 
-        n_components: int
-            The dimensionality of the euclidean space into which to embed the data.
-
-        initial_alpha: float
-            Initial learning rate for the SGD.
+        n_epochs: int
+            The number of training epochs to use in current optimization.
 
         a: float
             Parameter of differentiable approximation of right adjoint functor
@@ -1916,37 +1938,17 @@ class UMAP(BaseEstimator):
         b: float
             Parameter of differentiable approximation of right adjoint functor
 
-        gamma: float
+        rng_state: array of int64, shape (3,)
+            The internal state of the rng
+
+        gamma: float (optional, default 1.0)
             Weight to apply to negative samples.
 
+        initial_alpha: float (optional, default 1.0)
+            Initial learning rate for the SGD.
+
         negative_sample_rate: int (optional, default 5)
-            The number of negative samples to select per positive sample
-            in the optimization process. Increasing this value will result
-            in greater repulsive force being applied, greater optimization
-            cost, but slightly more accuracy.
-
-        n_epochs: int (optional, default 0)
-            The number of training epochs to be used in optimizing the
-            low dimensional embedding. Larger values result in more accurate
-            embeddings. If 0 is specified a value will be selected based on
-            the size of the input dataset (200 for large datasets, 500 for small).
-
-        init: string
-            How to initialize the low dimensional embedding. Options are:
-                * 'spectral': use a spectral embedding of the fuzzy 1-skeleton
-                * 'random': assign initial embedding positions at random.
-                * A numpy array of initial embedding positions.
-
-        random_state: numpy RandomState or equivalent
-            A state capable being used as a numpy random state.
-
-        metric: string
-            The metric used to measure distance in high dimensional space; used if
-            multiple connected components need to be layed out.
-
-        metric_kwds: dict
-            Key word arguments to be passed to the metric function; used if
-            multiple connected components need to be layed out.
+            Number of negative samples to use per positive sample.
 
         verbose: bool (optional, default False)
             Whether to report information on the current progress of the algorithm.
@@ -1954,84 +1956,106 @@ class UMAP(BaseEstimator):
         Returns
         -------
         embedding: array of shape (n_samples, n_components)
-            The optimized of ``graph`` into an ``n_components`` dimensional
-            euclidean space.
+            The optimized embedding.
         """
+
         graph = graph.tocoo()
         graph.sum_duplicates()
-        n_vertices = graph.shape[1]
-
-        if n_epochs <= 0:
-            # For smaller datasets we can use more epochs
-            if graph.shape[0] <= 10000:
-                n_epochs = 500
-            else:
-                n_epochs = 200
+        n_vertices = graph.shape[1] # n_vertices: The number of vertices (0-simplices) in the dataset.
 
         graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
         graph.eliminate_zeros()
 
-        if isinstance(init, str) and init == "random":
-            embedding = random_state.uniform(
-                low=-10.0, high=10.0, size=(graph.shape[0], n_components)
-            ).astype(np.float32)
-        elif isinstance(init, str) and init == "spectral":
-            # We add a little noise to avoid local minima for optimization to come
-            initialisation = spectral_layout(
-                data,
-                graph,
-                n_components,
-                random_state,
-                metric=metric,
-                metric_kwds=metric_kwds,
-            )
-            expansion = 10.0 / np.abs(initialisation).max()
-            embedding = (initialisation * expansion).astype(
-                np.float32
-            ) + random_state.normal(
-                scale=0.0001, size=[graph.shape[0], n_components]
-            ).astype(
-                np.float32
-            )
-        else:
-            init_data = np.array(init)
-            if len(init_data.shape) == 2:
-                if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
-                    tree = KDTree(init_data)
-                    dist, ind = tree.query(init_data, k=2)
-                    nndist = np.mean(dist[:, 1])
-                    embedding = init_data + random_state.normal(
-                        scale=0.001 * nndist, size=init_data.shape
-                    ).astype(np.float32)
-                else:
-                    embedding = init_data
-
-
+        # epochs_per_samples: array of shape (n_1_simplices)
+        #     A float value of the number of epochs per 1-simplex. 1-simplices with
+        #     weaker membership strength will have more epochs between being sampled.
         epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
 
+        # head: array of shape (n_1_simplices)
+        #     The indices of the heads of 1-simplices with non-zero membership.
         head = graph.row
+        # tail: array of shape (n_1_simplices)
+        #     The indices of the tails of 1-simplices with non-zero membership.
         tail = graph.col
 
         rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
-        
-        embedding = optimize_layout(
-            embedding,
-            embedding,
-            head,
-            tail,
-            n_epochs,
-            n_vertices,
-            epochs_per_sample,
-            a,
-            b,
-            rng_state,
-            gamma,
-            initial_alpha,
-            negative_sample_rate,
-            verbose=verbose,
-        )
-        
-        return embedding
+
+
+
+        dim = head_embedding.shape[1]
+        move_other = head_embedding.shape[0] == tail_embedding.shape[0]
+        alpha = initial_alpha
+
+        epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+        epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+        epoch_of_next_sample = epochs_per_sample.copy()
+
+        for n in range(n_epochs):
+            self.total_epochs += 1
+
+            for i in range(epochs_per_sample.shape[0]):
+                if epoch_of_next_sample[i] <= n:
+                    j = head[i]
+                    k = tail[i]
+
+                    current = head_embedding[j]
+                    other = tail_embedding[k]
+
+                    dist_squared = rdist(current, other)
+
+                    if dist_squared > 0.0:
+                        grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
+                        grad_coeff /= a * pow(dist_squared, b) + 1.0
+                    else:
+                        grad_coeff = 0.0
+
+                    for d in range(dim):
+                        grad_d = clip(grad_coeff * (current[d] - other[d]))
+                        current[d] += grad_d * alpha
+                        if move_other:
+                            other[d] += -grad_d * alpha
+
+                    epoch_of_next_sample[i] += epochs_per_sample[i]
+
+                    n_neg_samples = int(
+                        (n - epoch_of_next_negative_sample[i])
+                        / epochs_per_negative_sample[i]
+                    )
+
+                    for p in range(n_neg_samples):
+                        k = tau_rand_int(rng_state) % n_vertices
+
+                        other = tail_embedding[k]
+
+                        dist_squared = rdist(current, other)
+
+                        if dist_squared > 0.0:
+                            grad_coeff = 2.0 * gamma * b
+                            grad_coeff /= (0.001 + dist_squared) * (
+                                a * pow(dist_squared, b) + 1
+                            )
+                        elif j == k:
+                            continue
+                        else:
+                            grad_coeff = 0.0
+
+                        for d in range(dim):
+                            if grad_coeff > 0.0:
+                                grad_d = clip(grad_coeff * (current[d] - other[d]))
+                            else:
+                                grad_d = 4.0
+                            current[d] += grad_d * alpha
+
+                    epoch_of_next_negative_sample[i] += (
+                        n_neg_samples * epochs_per_negative_sample[i]
+                    )
+
+            alpha = initial_alpha * (1.0 - (float(n) / float(n_epochs)))
+
+            if verbose and n % int(n_epochs / 10) == 0:
+                print("\tcompleted ", n, " / ", n_epochs, "epochs")
+
+        return head_embedding
 
 
     def run(self, X, y=None):
@@ -2102,18 +2126,18 @@ class UMAP(BaseEstimator):
         self.vals = np.zeros((self.N * self.K), dtype=np.float32)
 
         # initializing embedding position (pseudo values for test)
-        init = "random" # return errors when set to "spectral"
         random_state = check_random_state(self.random_state)
         self._initial_alpha = self.learning_rate
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
-        n_epochs = 0
+        self.total_epochs = 0
 
         # run iteration and work progressively
         for _ in range(max_iter):
             if(self.table.size() < self.N):
+
                 # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops)
+                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
                 self.graph_ = adj_matrix
                 print("adj matrix return success!")
 
@@ -2121,7 +2145,7 @@ class UMAP(BaseEstimator):
                 # Embedding
                 ######################
 
-                # Set initiail position
+                # Set initiail position (DONE)
 
                 # Compute gradient
 
@@ -2129,39 +2153,37 @@ class UMAP(BaseEstimator):
 
                 # perform gradient update
                 
-                # normalize Y (DO WE HAVE TO ??)
-
                 # print out progress
                 
                 # THE END
-                
-                print(self.table.size())
-                print(self._raw_data.shape)
-                print(self.n_components)
-                print(X.shape)
 
-                print("==="*30)
+                # For smaller datasets we can use more epochs
+                if self.graph_.shape[0] <= 10000:
+                    n_epochs = 500
+                else:
+                    n_epochs = 200
+                self.total_epochs += n_epochs
 
-                self.embedding_ = self.progressive_simplicial_set_embedding(
-                    X[:self.table.size()],
-                    self.graph_,
-                    self.n_components,
-                    self._initial_alpha,
-                    self._a,
-                    self._b,
-                    self.repulsion_strength,
-                    self.negative_sample_rate,
-                    n_epochs,
-                    init,
-                    random_state,
-                    self.metric,
-                    self._metric_kwds,
-                    self.verbose,
+                embedding = self.progressive_optimize_layout(
+                    head_embedding=self.Y[:self.table.size()],
+                    tail_embedding=self.Y[:self.table.size()],
+                    graph=self.graph_,
+                    n_epochs=n_epochs,
+                    a=self._a,
+                    b=self._b,
+                    random_state=random_state,
+                    initial_alpha=self._initial_alpha,
                 )
 
-                print("==="*30)
+                # normalize Y (DO WE HAVE TO ??)
+                # csr_graph = normalize(graph.tocsr(), norm="l1")
+                self.Y[:self.table.size()] = embedding
 
-                print(self.embedding_.shape) # return shape
+
+
+                print(embedding)
+                print(embedding.shape) # return shape
+                print("==="*30)
 
                 self._input_hash = joblib.hash(self._raw_data)
         
@@ -2192,7 +2214,7 @@ class UMAP(BaseEstimator):
         """
         # self.fit(X, y)
         self.run(X, y)
-        # return self.embedding_
+        # return self.Y
 
     def transform(self, X):
         """Transform X into the existing embedded space and return that
