@@ -1991,12 +1991,12 @@ class UMAP(BaseEstimator):
         ##########################
         ##########################
 
-        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
+        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
 
 
 
-        dim = head_embedding.shape[1]
-        move_other = head_embedding.shape[0] == tail_embedding.shape[0]
+        dim = head_embedding.shape[1] # embedding dimension (e.g., )
+        move_other = head_embedding.shape[0] == tail_embedding.shape[0] # table.size == table.size, True
 
         epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
         epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
