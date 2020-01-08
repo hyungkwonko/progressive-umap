@@ -1697,9 +1697,14 @@ class UMAP(BaseEstimator):
                 # set their initial points to the mean of its neighbors
                 for k in range(1, self.n_neighbors):
                     for j in range(self.n_components):
-                        self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.n_neighbors
                         # issue1: divide by (self.n_neighbors - 1) ?
-                        # issue2: add random noise after calculation ?
+                        self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.n_neighbors
+                # issue2: add random noise after calculation
+                if (updates['addPointResult'] > 0) & (i == self.table.size() - 1):
+                    nndist = np.mean(self.distances[:, 1]) # WHY second column?? is this just chosen randomly?
+                    self.Y[self.table.size()-updates['addPointResult']:self.table.size()] += self.random_state.normal(
+                        scale=0.001 * nndist, size=[updates['addPointResult'], self.n_components] # 0.001? 0.0001?
+                    ).astype(np.float32)
             else:
                 raise ValueError("Please check init value for embedding")
 
@@ -1905,7 +1910,6 @@ class UMAP(BaseEstimator):
         b,
         random_state,
         gamma=1.0,
-        initial_alpha=1.0,
         negative_sample_rate=5.0,
         verbose=False):
         """Improve an embedding using stochastic gradient descent to minimize the
@@ -1939,9 +1943,6 @@ class UMAP(BaseEstimator):
 
         gamma: float (optional, default 1.0)
             Weight to apply to negative samples.
-
-        initial_alpha: float (optional, default 1.0)
-            Initial learning rate for the SGD.
 
         negative_sample_rate: int (optional, default 5)
             Number of negative samples to use per positive sample.
@@ -1980,7 +1981,6 @@ class UMAP(BaseEstimator):
 
         dim = head_embedding.shape[1]
         move_other = head_embedding.shape[0] == tail_embedding.shape[0]
-        alpha = initial_alpha
 
         epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
         epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
@@ -1989,10 +1989,10 @@ class UMAP(BaseEstimator):
         print(f"epochs_per_sample: {epochs_per_sample}")
 
         for n in range(n_epochs):
-            self.total_epochs += 1
+            self.epochs += 1
 
             for i in range(epochs_per_sample.shape[0]):
-                if epoch_of_next_sample[i] <= n:
+                if epoch_of_next_sample[i] <= n: ############
                     j = head[i]
                     k = tail[i]
 
@@ -2009,14 +2009,14 @@ class UMAP(BaseEstimator):
 
                     for d in range(dim):
                         grad_d = clip(grad_coeff * (current[d] - other[d]))
-                        current[d] += grad_d * alpha
+                        current[d] += grad_d * self.alpha
                         if move_other:
-                            other[d] += -grad_d * alpha
+                            other[d] += -grad_d * self.alpha
 
                     epoch_of_next_sample[i] += epochs_per_sample[i]
 
                     n_neg_samples = int(
-                        (n - epoch_of_next_negative_sample[i])
+                        (n - epoch_of_next_negative_sample[i]) ###############
                         / epochs_per_negative_sample[i]
                     )
 
@@ -2042,16 +2042,18 @@ class UMAP(BaseEstimator):
                                 grad_d = clip(grad_coeff * (current[d] - other[d]))
                             else:
                                 grad_d = 4.0
-                            current[d] += grad_d * alpha
+                            current[d] += grad_d * self.alpha
 
                     epoch_of_next_negative_sample[i] += (
                         n_neg_samples * epochs_per_negative_sample[i]
                     )
 
-            alpha = initial_alpha * (1.0 - (float(n) / float(n_epochs)))
+            # alpha: float (optional, default 1.0)
+            #     Initial learning rate for the SGD.
+            self.alpha = self.alpha * (1.0 - (self.epochs / self.total_epochs))
 
-            if verbose and n % int(n_epochs / 10) == 0:
-                print("\tcompleted ", n, " / ", n_epochs, "epochs")
+            if verbose and self.total_epochs % int(self.epochs / 10) == 0:
+                print("\tcompleted ", n, " / ", self.epochs, "epochs")
 
         return head_embedding
 
@@ -2116,7 +2118,9 @@ class UMAP(BaseEstimator):
         else:
             init = self.init
 
-        self._initial_alpha = self.learning_rate
+        self._initial_alpha = self.learning_rate # initial alpha should be removed
+        self.alpha = self.learning_rate
+
 
         # Check parameters
         self._validate_parameters()
@@ -2148,21 +2152,10 @@ class UMAP(BaseEstimator):
             self._sparse_data = False
 
         # Set random seed
-        random_state = check_random_state(self.random_state)
-
-
-
-
-
-
+        self.random_state = check_random_state(self.random_state)
 
 
         self.N = X.shape[0]
-
-        # self.min_dist = min_dist
-        # self.local_connectivity = local_connectivity
-        max_iter = 3
-        ops = 14
 
         # initialize table & neighbors & distances
         self.indexes = np.zeros((self.N, self.n_neighbors), dtype=np.int64) # with np.in32, it is not optimized
@@ -2184,53 +2177,62 @@ class UMAP(BaseEstimator):
         # initializing embedding position (pseudo values for test)
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
-        self.total_epochs = 0
+
+        # For smaller datasets we can use more epochs
+        if self.N <= 10000:
+            self.total_epochs = 500
+        else:
+            self.total_epochs = 200
+
+        self.total_epochs = 3
+        # self.min_dist = min_dist
+        # self.local_connectivity = local_connectivity
+        ops = 14
+        self.epochs = 0
+
 
         # run iteration (work progressively)
-        for _ in range(max_iter):
+        for _ in range(self.total_epochs):
             if(self.table.size() < self.N):
-
                 # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="random")
+                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
                 self.graph_ = adj_matrix
-                print("adj matrix return success!")
+                # print("adj matrix return success!")
 
-                ######################
-                # Embedding
-                ######################
+            ######################
+            # Embedding
+            ######################
 
-                # Set initiail position (DONE)
+            # Set initial position (DONE)
 
-                # Compute gradient
+            # Compute gradient
 
-                # update gains
+            # update gains
 
-                # perform gradient update
-                
-                # print out progress
-                
-                # THE END
+            # perform gradient update
+            
+            # print out progress
+            
+            # THE END
 
-                embedding = self.progressive_optimize_layout(
-                    head_embedding=self.Y[:self.table.size()],
-                    tail_embedding=self.Y[:self.table.size()],
-                    graph=self.graph_,
-                    n_epochs=1,
-                    a=self._a,
-                    b=self._b,
-                    random_state=random_state,
-                    initial_alpha=self._initial_alpha,
-                )
+            embedding = self.progressive_optimize_layout(
+                head_embedding=self.Y[:self.table.size()],
+                tail_embedding=self.Y[:self.table.size()],
+                graph=self.graph_,
+                n_epochs=1,
+                a=self._a,
+                b=self._b,
+                random_state=self.random_state,
+            )
 
-                # normalize Y (DO WE HAVE TO ??)
-                # csr_graph = normalize(graph.tocsr(), norm="l1")
-                self.Y[:self.table.size()] = embedding
+            # normalize Y (DO WE HAVE TO ??)
+            # csr_graph = normalize(graph.tocsr(), norm="l1")
 
-                print(embedding)
-                # print(embedding.shape) # return shape
-                # print("==="*30)
+            self.Y[:self.table.size()] = embedding
 
-                self._input_hash = joblib.hash(self._raw_data)
+            # print(embedding)
+
+            self._input_hash = joblib.hash(self._raw_data)
 
         return self
 
@@ -2383,6 +2385,3 @@ class UMAP(BaseEstimator):
         )
 
         return embedding
-
-
-
