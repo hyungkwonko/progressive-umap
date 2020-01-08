@@ -675,7 +675,7 @@ def make_epochs_per_sample(weights, n_epochs):
     Parameters
     ----------
     weights: array of shape (n_1_simplices)
-        The weights ofhow much we wish to sample each 1-simplex.
+        The weights of how much we wish to sample each 1-simplex.
 
     n_epochs: int
         The total number of epochs we want to train for.
@@ -1019,9 +1019,6 @@ def simplicial_set_embedding(
                 embedding = init_data
 
     epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
-    print(f"epochs_per_sample: {epochs_per_sample}")
-    print(f"epochs_per_sample.shape: {epochs_per_sample.shape}")
-
 
     head = graph.row
     tail = graph.col
@@ -1496,6 +1493,7 @@ class UMAP(BaseEstimator):
                 self.verbose,
             )
 
+            # self._search_graph (?) 1500 - 1530 (?)
             self._search_graph = scipy.sparse.lil_matrix(
                 (X.shape[0], X.shape[0]), dtype=np.int8
             )

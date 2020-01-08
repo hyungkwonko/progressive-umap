@@ -1956,17 +1956,18 @@ class UMAP(BaseEstimator):
             The optimized embedding.
         """
 
-        graph = graph.tocoo()
+        graph = graph.tocoo() # type: csr_matrix to coo_matrix
         graph.sum_duplicates()
         n_vertices = graph.shape[1] # n_vertices: The number of vertices (0-simplices) in the dataset.
 
-        graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
+        # remove values smaller than the threshold (e.g., 1 / 200)
+        graph.data[graph.data < (graph.data.max() / float(self.total_epochs))] = 0.0
         graph.eliminate_zeros()
 
         # epochs_per_samples: array of shape (n_1_simplices)
         #     A float value of the number of epochs per 1-simplex. 1-simplices with
         #     weaker membership strength will have more epochs between being sampled.
-        epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
+        epochs_per_sample = make_epochs_per_sample(graph.data, self.total_epochs)
 
         # head: array of shape (n_1_simplices)
         #     The indices of the heads of 1-simplices with non-zero membership.
@@ -1974,6 +1975,21 @@ class UMAP(BaseEstimator):
         # tail: array of shape (n_1_simplices)
         #     The indices of the tails of 1-simplices with non-zero membership.
         tail = graph.col
+
+        ##########################
+        ##########################
+        ##########################
+        ##########################
+        ##########################
+
+        print(f"graph.row.shape: {graph.row.shape}")
+        print(f"graph.col.shape: {graph.col.shape}")
+
+        ##########################
+        ##########################
+        ##########################
+        ##########################
+        ##########################
 
         rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
 
@@ -1987,12 +2003,13 @@ class UMAP(BaseEstimator):
         epoch_of_next_sample = epochs_per_sample.copy()
 
         print(f"epochs_per_sample: {epochs_per_sample}")
+        print(f"epochs_per_sample.shape[0]: {epochs_per_sample.shape[0]}")
 
-        for n in range(n_epochs):
+        for NNN in range(n_epochs):
             self.epochs += 1
 
             for i in range(epochs_per_sample.shape[0]):
-                if epoch_of_next_sample[i] <= n: ############
+                if epoch_of_next_sample[i] <= NNN: ############
                     j = head[i]
                     k = tail[i]
 
@@ -2016,7 +2033,7 @@ class UMAP(BaseEstimator):
                     epoch_of_next_sample[i] += epochs_per_sample[i]
 
                     n_neg_samples = int(
-                        (n - epoch_of_next_negative_sample[i]) ###############
+                        (NNN - epoch_of_next_negative_sample[i]) ###############
                         / epochs_per_negative_sample[i]
                     )
 
@@ -2048,12 +2065,10 @@ class UMAP(BaseEstimator):
                         n_neg_samples * epochs_per_negative_sample[i]
                     )
 
-            # alpha: float (optional, default 1.0)
-            #     Initial learning rate for the SGD.
-            self.alpha = self.alpha * (1.0 - (self.epochs / self.total_epochs))
+            self.alpha = self._initial_alpha * (1.0 - (self.epochs / self.total_epochs))
 
             if verbose and self.total_epochs % int(self.epochs / 10) == 0:
-                print("\tcompleted ", n, " / ", self.epochs, "epochs")
+                print("\tcompleted ", NNN, " / ", self.epochs, "epochs")
 
         return head_embedding
 
@@ -2118,9 +2133,7 @@ class UMAP(BaseEstimator):
         else:
             init = self.init
 
-        self._initial_alpha = self.learning_rate # initial alpha should be removed
-        self.alpha = self.learning_rate
-
+        self.alpha = self._initial_alpha = self.learning_rate
 
         # Check parameters
         self._validate_parameters()
@@ -2184,7 +2197,6 @@ class UMAP(BaseEstimator):
         else:
             self.total_epochs = 200
 
-        self.total_epochs = 3
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         ops = 14
@@ -2192,12 +2204,17 @@ class UMAP(BaseEstimator):
 
 
         # run iteration (work progressively)
-        for _ in range(self.total_epochs):
+        for iter in range(self.total_epochs):
+
+            if iter == 3:
+                exit()
+
             if(self.table.size() < self.N):
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
                 self.graph_ = adj_matrix
-                # print("adj matrix return success!")
+                print("adj matrix return success!")
+                print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
 
             ######################
             # Embedding
@@ -2225,14 +2242,14 @@ class UMAP(BaseEstimator):
                 random_state=self.random_state,
             )
 
-            # normalize Y (DO WE HAVE TO ??)
+            # normalize embedding (Y) (DO WE HAVE TO ??)
             # csr_graph = normalize(graph.tocsr(), norm="l1")
 
             self.Y[:self.table.size()] = embedding
 
             # print(embedding)
 
-            self._input_hash = joblib.hash(self._raw_data)
+        self._input_hash = joblib.hash(self._raw_data)
 
         return self
 

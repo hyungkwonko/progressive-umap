@@ -8,4 +8,4 @@ if __name__ == "__main__":
   digits = load_digits()
   y = umap.UMAP(n_neighbors=5).fit_transform(digits['data'])
   # print(y)
-  print(f"y.shape: {y.shape}")
+  # print(f"y.shape: {y.shape}")
