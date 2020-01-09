@@ -1905,7 +1905,6 @@ class UMAP(BaseEstimator):
         head_embedding,
         tail_embedding,
         graph,
-        n_epochs,
         a,
         b,
         random_state,
@@ -1928,9 +1927,6 @@ class UMAP(BaseEstimator):
             previously unseen points with respect to an existing embedding this
             is simply the head_embedding (again); otherwise it provides the
             existing embedding to embed with respect to.
-
-        n_epochs: int
-            The number of training epochs to use in current optimization.
 
         a: float
             Parameter of differentiable approximation of right adjoint functor
@@ -1971,10 +1967,10 @@ class UMAP(BaseEstimator):
 
         # head: array of shape (n_1_simplices)
         #     The indices of the heads of 1-simplices with non-zero membership.
-        head = graph.row
+        head = graph.row # first index
         # tail: array of shape (n_1_simplices)
         #     The indices of the tails of 1-simplices with non-zero membership.
-        tail = graph.col
+        tail = graph.col # second index
 
         ##########################
         ##########################
@@ -2002,21 +1998,35 @@ class UMAP(BaseEstimator):
         epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
         epoch_of_next_sample = epochs_per_sample.copy()
 
-        print(f"epochs_per_sample: {epochs_per_sample}")
-        print(f"epochs_per_sample.shape[0]: {epochs_per_sample.shape[0]}")
+        # incrementally run sampling process
+        if (self.remainder.size != 0) & (self.condition == "original"):
+            print(epochs_per_sample)
+            epoch_of_next_sample[:self.remainder.size] -= self.remainder
+            print("1: ", epochs_per_sample)
+            print("-: ", self.remainder)
+            print("2: ", epoch_of_next_sample)
+            print("1c: ", epochs_per_sample.shape)
+            print("2c: ", self.remainder.shape)
 
-        for NNN in range(n_epochs):
+        # print(f"epoch_of_next_sample before: {epoch_of_next_sample}")
+
+        for epoch in range(int(np.ceil(epochs_per_sample.max()) + 1)):
+            ##
+            ##
             self.epochs += 1
+            # print(f"epoch: {epoch}")
+            # print(f"xx: ", int(np.ceil(epochs_per_sample.max()) + 1))
+            # print(f"max: ", epochs_per_sample.max())
 
             for i in range(epochs_per_sample.shape[0]):
-                if epoch_of_next_sample[i] <= NNN: ############
-                    j = head[i]
-                    k = tail[i]
+                if epoch_of_next_sample[i] <= epoch: ############
+                    j = head[i] # first index
+                    k = tail[i] # second index
 
-                    current = head_embedding[j]
-                    other = tail_embedding[k]
+                    current = head_embedding[j] # position of j index in embedded space
+                    other = tail_embedding[k] # position of k index in embedded space
 
-                    dist_squared = rdist(current, other)
+                    dist_squared = rdist(current, other) # squared distance between pts = (x - y)^2
 
                     if dist_squared > 0.0:
                         grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
@@ -2024,19 +2034,22 @@ class UMAP(BaseEstimator):
                     else:
                         grad_coeff = 0.0
 
+                    # update target index
                     for d in range(dim):
-                        grad_d = clip(grad_coeff * (current[d] - other[d]))
+                        grad_d = clip(grad_coeff * (current[d] - other[d])) # (min: -4, max: 4), do have a strong influence
                         current[d] += grad_d * self.alpha
                         if move_other:
                             other[d] += -grad_d * self.alpha
 
                     epoch_of_next_sample[i] += epochs_per_sample[i]
-
+                    
+                    # number of negative samples to be considered (min: 5, max: ?)
                     n_neg_samples = int(
-                        (NNN - epoch_of_next_negative_sample[i]) ###############
+                        (epoch - epoch_of_next_negative_sample[i]) ###############
                         / epochs_per_negative_sample[i]
                     )
 
+                    # update negative sampled indexes
                     for p in range(n_neg_samples):
                         k = tau_rand_int(rng_state) % n_vertices
 
@@ -2068,8 +2081,12 @@ class UMAP(BaseEstimator):
             self.alpha = self._initial_alpha * (1.0 - (self.epochs / self.total_epochs))
 
             if verbose and self.total_epochs % int(self.epochs / 10) == 0:
-                print("\tcompleted ", NNN, " / ", self.epochs, "epochs")
+                print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
+        
+        print(f"epoch_of_next_sample after: {epoch_of_next_sample}")
 
+        self.remainder = np.subtract(epoch_of_next_sample, epoch)
+        
         return head_embedding
 
 
@@ -2190,6 +2207,8 @@ class UMAP(BaseEstimator):
         # initializing embedding position (pseudo values for test)
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
+        self.remainder = np.array([])
+        self.condition = "original"
 
         # For smaller datasets we can use more epochs
         if self.N <= 10000:
@@ -2236,7 +2255,6 @@ class UMAP(BaseEstimator):
                 head_embedding=self.Y[:self.table.size()],
                 tail_embedding=self.Y[:self.table.size()],
                 graph=self.graph_,
-                n_epochs=1,
                 a=self._a,
                 b=self._b,
                 random_state=self.random_state,

@@ -971,7 +971,6 @@ def simplicial_set_embedding(
     graph = graph.tocoo()
     graph.sum_duplicates()
     n_vertices = graph.shape[1]
-    print(f"n_vertices: {n_vertices}")
 
     if n_epochs <= 0:
         # For smaller datasets we can use more epochs
@@ -1022,8 +1021,11 @@ def simplicial_set_embedding(
 
     head = graph.row
     tail = graph.col
-    print(f"graph.row.shape: {graph.row.shape}")
-    print(f"graph.col.shape: {graph.col.shape}")
+    print(f"graph: {graph}")
+    print(f"graph.row: {graph.row}")
+    print(f"graph.col: {graph.col}")
+    print(f"graph.data: {graph.data}")
+    print(f"embedding: {embedding}")
 
 
     rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random integers
