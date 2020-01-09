@@ -1998,26 +1998,26 @@ class UMAP(BaseEstimator):
         epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
         epoch_of_next_sample = epochs_per_sample.copy()
 
+        # set running epochs of this iteration
+        run_epoch = int(np.ceil(epochs_per_sample.max()) + 1)
+
         # incrementally run sampling process
         if (self.remainder.size != 0) & (self.condition == "original"):
-            print(epochs_per_sample)
-            epoch_of_next_sample[:self.remainder.size] -= self.remainder
-            print("1: ", epochs_per_sample)
-            print("-: ", self.remainder)
-            print("2: ", epoch_of_next_sample)
-            print("1c: ", epochs_per_sample.shape)
-            print("2c: ", self.remainder.shape)
+            # add remaining values from previous step
+            epoch_of_next_sample[:self.remainder.size] += self.remainder
+            # this is somewhat huge because of some big values. Do we need to clip? (change if required after seeing the result)
+            run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
-        # print(f"epoch_of_next_sample before: {epoch_of_next_sample}")
+            # print("1: ", epochs_per_sample)
+            # print("+: ", self.remainder)
+            # print("2: ", epoch_of_next_sample)
+            # print("2max: ", np.ceil(epoch_of_next_sample.max()))
+            print(f"run_epoch: ", run_epoch)
+            print(f"max: ", epochs_per_sample.max())
 
-        for epoch in range(int(np.ceil(epochs_per_sample.max()) + 1)):
-            ##
-            ##
+        for epoch in range(run_epoch):
+
             self.epochs += 1
-            # print(f"epoch: {epoch}")
-            # print(f"xx: ", int(np.ceil(epochs_per_sample.max()) + 1))
-            # print(f"max: ", epochs_per_sample.max())
-
             for i in range(epochs_per_sample.shape[0]):
                 if epoch_of_next_sample[i] <= epoch: ############
                     j = head[i] # first index
@@ -2083,8 +2083,7 @@ class UMAP(BaseEstimator):
             if verbose and self.total_epochs % int(self.epochs / 10) == 0:
                 print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
         
-        print(f"epoch_of_next_sample after: {epoch_of_next_sample}")
-
+        # this will be added next time
         self.remainder = np.subtract(epoch_of_next_sample, epoch)
         
         return head_embedding
@@ -2225,15 +2224,15 @@ class UMAP(BaseEstimator):
         # run iteration (work progressively)
         for iter in range(self.total_epochs):
 
-            if iter == 3:
+            if iter == 30:
                 exit()
 
             if(self.table.size() < self.N):
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
                 self.graph_ = adj_matrix
-                print("adj matrix return success!")
-                print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
+                # print("adj matrix return success!")
+                # print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
 
             ######################
             # Embedding

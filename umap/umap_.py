@@ -1021,12 +1021,6 @@ def simplicial_set_embedding(
 
     head = graph.row
     tail = graph.col
-    print(f"graph: {graph}")
-    print(f"graph.row: {graph.row}")
-    print(f"graph.col: {graph.col}")
-    print(f"graph.data: {graph.data}")
-    print(f"embedding: {embedding}")
-
 
     rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random integers
     
