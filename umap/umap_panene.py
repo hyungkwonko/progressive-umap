@@ -1692,7 +1692,7 @@ class UMAP(BaseEstimator):
 
             if init == "random":
                 for j in range(self.n_components):
-                    self.Y[i][j] = random.random() # random value between 0 and 1
+                    self.Y[i][j] = self.random_state.random() # random value between 0 and 1
             elif init == "neighbor":
                 # set their initial points to the mean of its neighbors
                 for k in range(1, self.n_neighbors):
@@ -1960,11 +1960,6 @@ class UMAP(BaseEstimator):
         graph.data[graph.data < (graph.data.max() / float(self.total_epochs))] = 0.0
         graph.eliminate_zeros()
 
-        # epochs_per_samples: array of shape (n_1_simplices)
-        #     A float value of the number of epochs per 1-simplex. 1-simplices with
-        #     weaker membership strength will have more epochs between being sampled.
-        epochs_per_sample = make_epochs_per_sample(graph.data, self.total_epochs)
-
         # head: array of shape (n_1_simplices)
         #     The indices of the heads of 1-simplices with non-zero membership.
         head = graph.row # first index
@@ -1972,120 +1967,173 @@ class UMAP(BaseEstimator):
         #     The indices of the tails of 1-simplices with non-zero membership.
         tail = graph.col # second index
 
-        ##########################
-        ##########################
-        ##########################
-        ##########################
-        ##########################
-
-        print(f"graph.row.shape: {graph.row.shape}")
-        print(f"graph.col.shape: {graph.col.shape}")
-
-        ##########################
-        ##########################
-        ##########################
-        ##########################
-        ##########################
+        # print(f"graph.row.shape: {graph.row.shape}")
+        # print(f"graph.col.shape: {graph.col.shape}")
 
         rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
 
-
-
-        dim = head_embedding.shape[1] # embedding dimension (e.g., )
+        dim = head_embedding.shape[1] # embedding dimension (e.g., 2)
         move_other = head_embedding.shape[0] == tail_embedding.shape[0] # table.size == table.size, True
 
-        epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
-        epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
-        epoch_of_next_sample = epochs_per_sample.copy()
 
-        # set running epochs of this iteration
-        run_epoch = int(np.ceil(epochs_per_sample.max()) + 1)
+        if self.condition == "sampling":
+            # epochs_per_samples: array of shape (n_1_simplices)
+            #     A float value of the number of epochs per 1-simplex. 1-simplices with
+            #     weaker membership strength will have more epochs between being sampled.
+            epochs_per_sample = make_epochs_per_sample(graph.data, self.total_epochs)
+            epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+            epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+            epoch_of_next_sample = epochs_per_sample.copy()
 
-        # incrementally run sampling process
-        if (self.remainder.size != 0) & (self.condition == "original"):
-            # add remaining values from previous step
-            epoch_of_next_sample[:self.remainder.size] += self.remainder
-            # this is somewhat huge because of some big values. Do we need to clip? (change if required after seeing the result)
-            run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
+            # set running epochs of this iteration
+            run_epoch = int(np.ceil(epochs_per_sample.max()) + 1)
 
-            # print("1: ", epochs_per_sample)
-            # print("+: ", self.remainder)
-            # print("2: ", epoch_of_next_sample)
-            # print("2max: ", np.ceil(epoch_of_next_sample.max()))
-            print(f"run_epoch: ", run_epoch)
-            print(f"max: ", epochs_per_sample.max())
+            # incrementally run sampling process
+            if self.remainder.size != 0:
+                # add remaining values from previous step
+                epoch_of_next_sample[:self.remainder.size] += self.remainder
+                # this is somewhat huge because of some big values. Do we need to clip? (change if required after seeing the result)
+                run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
-        for epoch in range(run_epoch):
+                # print("1: ", epochs_per_sample)
+                # print("+: ", self.remainder)
+                # print("2: ", epoch_of_next_sample)
+                # print("2max: ", np.ceil(epoch_of_next_sample.max()))
+                print(f"run_epoch: ", run_epoch)
+                print(f"max: ", epochs_per_sample.max())
 
-            self.epochs += 1
-            for i in range(epochs_per_sample.shape[0]):
-                if epoch_of_next_sample[i] <= epoch: ############
-                    j = head[i] # first index
-                    k = tail[i] # second index
+            for epoch in range(run_epoch):
 
-                    current = head_embedding[j] # position of j index in embedded space
-                    other = tail_embedding[k] # position of k index in embedded space
+                self.epochs += 1
+                for i in range(epochs_per_sample.shape[0]):
+                    if epoch_of_next_sample[i] <= epoch: ############
+                        j = head[i] # first index
+                        k = tail[i] # second index
 
-                    dist_squared = rdist(current, other) # squared distance between pts = (x - y)^2
+                        current = head_embedding[j] # position of j index in embedded space
+                        other = tail_embedding[k] # position of k index in embedded space
 
-                    if dist_squared > 0.0:
-                        grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
-                        grad_coeff /= a * pow(dist_squared, b) + 1.0
-                    else:
-                        grad_coeff = 0.0
-
-                    # update target index
-                    for d in range(dim):
-                        grad_d = clip(grad_coeff * (current[d] - other[d])) # (min: -4, max: 4), do have a strong influence
-                        current[d] += grad_d * self.alpha
-                        if move_other:
-                            other[d] += -grad_d * self.alpha
-
-                    epoch_of_next_sample[i] += epochs_per_sample[i]
-                    
-                    # number of negative samples to be considered (min: 5, max: ?)
-                    n_neg_samples = int(
-                        (epoch - epoch_of_next_negative_sample[i]) ###############
-                        / epochs_per_negative_sample[i]
-                    )
-
-                    # update negative sampled indexes
-                    for p in range(n_neg_samples):
-                        k = tau_rand_int(rng_state) % n_vertices
-
-                        other = tail_embedding[k]
-
-                        dist_squared = rdist(current, other)
+                        dist_squared = rdist(current, other) # squared distance between pts = (x - y)^2
 
                         if dist_squared > 0.0:
-                            grad_coeff = 2.0 * gamma * b
-                            grad_coeff /= (0.001 + dist_squared) * (
-                                a * pow(dist_squared, b) + 1
-                            )
-                        elif j == k:
-                            continue
+                            grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
+                            grad_coeff /= a * pow(dist_squared, b) + 1.0
                         else:
                             grad_coeff = 0.0
 
+                        # update target index
                         for d in range(dim):
-                            if grad_coeff > 0.0:
-                                grad_d = clip(grad_coeff * (current[d] - other[d]))
-                            else:
-                                grad_d = 4.0
+                            grad_d = clip(grad_coeff * (current[d] - other[d])) # (min: -4, max: 4), do have a strong influence
                             current[d] += grad_d * self.alpha
+                            if move_other:
+                                other[d] += -grad_d * self.alpha
 
-                    epoch_of_next_negative_sample[i] += (
-                        n_neg_samples * epochs_per_negative_sample[i]
-                    )
+                        epoch_of_next_sample[i] += epochs_per_sample[i]
+                        
+                        # number of negative samples to be considered (min: 4, max: ?)
+                        n_neg_samples = int(
+                            (epoch - epoch_of_next_negative_sample[i]) ###############
+                            / epochs_per_negative_sample[i]
+                        )
+
+                        # update negative sampled indexes
+                        for p in range(n_neg_samples):
+                            k = tau_rand_int(rng_state) % n_vertices
+
+                            other = tail_embedding[k]
+
+                            dist_squared = rdist(current, other)
+
+                            if dist_squared > 0.0:
+                                grad_coeff = 2.0 * gamma * b
+                                grad_coeff /= (0.001 + dist_squared) * (
+                                    a * pow(dist_squared, b) + 1
+                                )
+                            elif j == k:
+                                continue
+                            else:
+                                grad_coeff = 0.0
+
+                            for d in range(dim):
+                                if grad_coeff > 0.0:
+                                    grad_d = clip(grad_coeff * (current[d] - other[d]))
+                                else:
+                                    grad_d = 4.0
+                                current[d] += grad_d * self.alpha
+
+                        epoch_of_next_negative_sample[i] += (
+                            n_neg_samples * epochs_per_negative_sample[i]
+                        )
+
+                self.alpha = self._initial_alpha * (1.0 - (self.epochs / self.total_epochs))
+
+                if verbose and self.total_epochs % int(self.epochs / 10) == 0:
+                    print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
+            
+            # this will be added next time
+            self.remainder = np.subtract(epoch_of_next_sample, epoch)
+
+        elif self.condition == "nonsampling":
+            self.epochs += 1
+
+            assert head.shape[0] == tail.shape[0], "head shape is not the same as tail shape"
+            run_epoch = head.shape[0]
+
+            for i in range(run_epoch):
+                j = head[i] # first index
+                k = tail[i] # second index
+
+                current = head_embedding[j] # position of j index in embedded space
+                other = tail_embedding[k] # position of k index in embedded space
+
+                dist_squared = rdist(current, other) # squared distance between pts = (x - y)^2
+
+                if dist_squared > 0.0:
+                    grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
+                    grad_coeff /= a * pow(dist_squared, b) + 1.0
+                else:
+                    grad_coeff = 0.0
+
+                # update target index
+                for d in range(dim):
+                    grad_d = clip(grad_coeff * (current[d] - other[d])) # (min: -4, max: 4), do have a strong influence
+                    current[d] += grad_d * self.alpha
+                    if move_other:
+                        other[d] += -grad_d * self.alpha
+
+                # number of negative samples to be considered (min: 4, max: ?)
+                n_neg_samples = int(4 + random_state.rand()*10)
+
+                # update negative sampled indexes
+                for p in range(n_neg_samples):
+                    k = tau_rand_int(rng_state) % n_vertices
+
+                    other = tail_embedding[k]
+
+                    dist_squared = rdist(current, other)
+
+                    if dist_squared > 0.0:
+                        grad_coeff = 2.0 * gamma * b
+                        grad_coeff /= (0.001 + dist_squared) * (
+                            a * pow(dist_squared, b) + 1
+                        )
+                    elif j == k:
+                        continue
+                    else:
+                        grad_coeff = 0.0
+
+                    for d in range(dim):
+                        if grad_coeff > 0.0:
+                            grad_d = clip(grad_coeff * (current[d] - other[d]))
+                        else:
+                            grad_d = 4.0
+                        current[d] += grad_d * self.alpha
 
             self.alpha = self._initial_alpha * (1.0 - (self.epochs / self.total_epochs))
 
             if verbose and self.total_epochs % int(self.epochs / 10) == 0:
                 print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
-        
-        # this will be added next time
-        self.remainder = np.subtract(epoch_of_next_sample, epoch)
-        
+            
         return head_embedding
 
 
@@ -2195,7 +2243,7 @@ class UMAP(BaseEstimator):
         self.rhos = np.zeros(self.N, dtype=np.float32)
 
         # initialize random Y value
-        self.Y = np.array(np.random.rand(self.N, self.n_components), dtype=np.float32)
+        self.Y = np.array(self.random_state.rand(self.N, self.n_components), dtype=np.float32)
         self.table = KNNTable(X, self.n_neighbors, self.indexes, self.distances)
 
         # initialize elements of COO matrix
@@ -2207,7 +2255,7 @@ class UMAP(BaseEstimator):
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
         self.remainder = np.array([])
-        self.condition = "original"
+        self.condition = "nonsampling"
 
         # For smaller datasets we can use more epochs
         if self.N <= 10000:
@@ -2224,7 +2272,7 @@ class UMAP(BaseEstimator):
         # run iteration (work progressively)
         for iter in range(self.total_epochs):
 
-            if iter == 30:
+            if iter == 4:
                 exit()
 
             if(self.table.size() < self.N):
