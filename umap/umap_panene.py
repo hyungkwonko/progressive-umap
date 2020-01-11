@@ -1129,8 +1129,7 @@ def progressive_optimize_layout3(
     gamma=1.0,
     initial_alpha=1.0,
     negative_sample_rate=5.0,
-    verbose=False,
-):
+    verbose=False,):
 
     dim = head_embedding.shape[1]
     move_other = head_embedding.shape[0] == tail_embedding.shape[0]
@@ -1139,13 +1138,23 @@ def progressive_optimize_layout3(
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
 
-    epochs_per_sample[epochs_per_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
-    epoch_of_next_sample[epoch_of_next_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
+    ratio = 1.0 - (float(n_epochs) / float(total_epochs))
+
+    # epochs_per_sample[epochs_per_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
+    # epoch_of_next_sample[epoch_of_next_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
+    if n_epochs < total_epochs * 0.5:
+        epochs_per_sample[epochs_per_sample > 50 ] = 50
+        epoch_of_next_sample[epoch_of_next_sample > 50] = 50
+    else:
+        epochs_per_sample[epochs_per_sample > 30 ] = 30
+        epoch_of_next_sample[epoch_of_next_sample > 30] = 30
+        # epochs_per_sample[epochs_per_sample > epochs_per_sample.max() * ratio ] = epochs_per_sample.max() * ratio + 1
+        # epoch_of_next_sample[epoch_of_next_sample > epoch_of_next_sample.max() * ratio] = epoch_of_next_sample.max() * ratio + 5
 
     run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
     for n in range(run_epoch):
-        alpha = initial_alpha * (1.0 - (float(n_epochs) / float(total_epochs)))
+        alpha = initial_alpha * ratio
         n_epochs += 1
 
         for i in range(epochs_per_sample.shape[0]):
@@ -1777,6 +1786,7 @@ class UMAP(BaseEstimator):
             for j in range(self.n_components):
                self.Y[i][j] = 0
 
+            # NEED FIX (IT IS NO REQUIRED)
             if init == "random":
                 for j in range(self.n_components):
                     self.Y[i][j] = self.random_state.random() # random value between 0 and 1
@@ -2333,8 +2343,10 @@ class UMAP(BaseEstimator):
         self.sigmas = np.zeros(self.N, dtype=np.float32)
         self.rhos = np.zeros(self.N, dtype=np.float32)
 
-        # initialize random Y value
-        self.Y = np.array(self.random_state.rand(self.N, self.n_components), dtype=np.float32)
+        # initialize random Y value following Uniform distribution
+        self.Y = np.array(self.random_state.uniform(
+            low=-10.0, high=10.0, size=(self.N, self.n_components)
+        ).astype(np.float32))
         self.table = KNNTable(X, self.n_neighbors, self.indexes, self.distances)
 
         # initialize elements of COO matrix
@@ -2352,12 +2364,12 @@ class UMAP(BaseEstimator):
         if self.N <= 10000:
             self.total_epochs = 500
         else:
-            self.total_epochs = 1000
+            self.total_epochs = 2000
 
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         # ops = 300
-        ops = 3000
+        ops = 2000
         self.epochs = 0
 
         _, yy = load_mnist('data/fashion', kind='train')
@@ -2452,7 +2464,7 @@ class UMAP(BaseEstimator):
             cbar.set_ticks(np.arange(10))
             cbar.set_ticklabels(item)
             # plt.title('Fashion MNIST Embedded')
-            plt.savefig(f"./{self.epochs}.png")
+            plt.savefig(f"./test_img/{self.epochs}.png")
 
             self.Y[:self.table.size()] = embedding
 
