@@ -5,3 +5,4 @@ data/mnist
 data/fashion
 data/google
 .vscode/
+test_img/

@@ -42,6 +42,9 @@ import locale
 
 from pynene import KNNTable
 
+from time_measure import draw_plot, load_mnist
+from matplotlib import pyplot as plt
+
 locale.setlocale(locale.LC_NUMERIC, "C")
 
 INT32_MIN = np.iinfo(np.int32).min + 1
@@ -1066,23 +1069,6 @@ def find_ab_params(spread, min_dist):
     return params[0], params[1]
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 def compute_gradient(similarities, Y, N, D, dY, theta, ee_factor):
     '''
     COMPUTE_GRADIENT 
@@ -1125,6 +1111,107 @@ def evaluate_error(similarities, Y, N, D, theta, ee_factor):
     C: cost
     '''
     return 0
+
+
+@numba.njit(fastmath=True, parallel=True)
+def progressive_optimize_layout3(
+    head_embedding,
+    tail_embedding,
+    head,
+    tail,
+    n_epochs,
+    total_epochs,
+    n_vertices,
+    epochs_per_sample,
+    a,
+    b,
+    rng_state,
+    gamma=1.0,
+    initial_alpha=1.0,
+    negative_sample_rate=5.0,
+    verbose=False,
+):
+
+    dim = head_embedding.shape[1]
+    move_other = head_embedding.shape[0] == tail_embedding.shape[0]
+
+    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+    epoch_of_next_sample = epochs_per_sample.copy()
+
+    epochs_per_sample[epochs_per_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
+    epoch_of_next_sample[epoch_of_next_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
+
+    run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
+
+    for n in range(run_epoch):
+        alpha = initial_alpha * (1.0 - (float(n_epochs) / float(total_epochs)))
+        n_epochs += 1
+
+        for i in range(epochs_per_sample.shape[0]):
+            if epoch_of_next_sample[i] <= n:
+
+
+                j = head[i]
+                k = tail[i]
+
+                current = head_embedding[j]
+                other = tail_embedding[k]
+
+                dist_squared = rdist(current, other)
+
+                if dist_squared > 0.0:
+                    grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
+                    grad_coeff /= a * pow(dist_squared, b) + 1.0
+                else:
+                    grad_coeff = 0.0
+
+                for d in range(dim):
+                    grad_d = clip(grad_coeff * (current[d] - other[d]))
+                    current[d] += grad_d * alpha
+                    if move_other:
+                        other[d] += -grad_d * alpha
+
+                epoch_of_next_sample[i] += epochs_per_sample[i]
+
+                n_neg_samples = int(
+                    (n - epoch_of_next_negative_sample[i])
+                    / epochs_per_negative_sample[i]
+                )
+
+                for p in range(n_neg_samples):
+                    k = tau_rand_int(rng_state) % n_vertices
+
+                    other = tail_embedding[k]
+
+                    dist_squared = rdist(current, other)
+
+                    if dist_squared > 0.0:
+                        grad_coeff = 2.0 * gamma * b
+                        grad_coeff /= (0.001 + dist_squared) * (
+                            a * pow(dist_squared, b) + 1
+                        )
+                    elif j == k:
+                        continue
+                    else:
+                        grad_coeff = 0.0
+
+                    for d in range(dim):
+                        if grad_coeff > 0.0:
+                            grad_d = clip(grad_coeff * (current[d] - other[d]))
+                        else:
+                            grad_d = 4.0
+                        current[d] += grad_d * alpha
+
+                epoch_of_next_negative_sample[i] += (
+                    n_neg_samples * epochs_per_negative_sample[i]
+                )
+
+        if verbose and n % int(n_epochs / 10) == 0:
+            print("\tcompleted ", n, " / ", n_epochs, "epochs")
+    return head_embedding, n_epochs
+
+
 
 
 class UMAP(BaseEstimator):
@@ -1975,7 +2062,6 @@ class UMAP(BaseEstimator):
         dim = head_embedding.shape[1] # embedding dimension (e.g., 2)
         move_other = head_embedding.shape[0] == tail_embedding.shape[0] # table.size == table.size, True
 
-
         if self.condition == "sampling":
             # epochs_per_samples: array of shape (n_1_simplices)
             #     A float value of the number of epochs per 1-simplex. 1-simplices with
@@ -1985,6 +2071,8 @@ class UMAP(BaseEstimator):
             epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
             epoch_of_next_sample = epochs_per_sample.copy()
 
+            epochs_per_sample[epochs_per_sample > 5 + self.epochs*0.1] = 5 + self.epochs*0.1
+
             # set running epochs of this iteration
             run_epoch = int(np.ceil(epochs_per_sample.max()) + 1)
 
@@ -1992,15 +2080,16 @@ class UMAP(BaseEstimator):
             if self.remainder.size != 0:
                 # add remaining values from previous step
                 epoch_of_next_sample[:self.remainder.size] += self.remainder
+                epoch_of_next_sample[epoch_of_next_sample > 5 + self.epochs*0.1] = 5 + self.epochs*0.1
                 # this is somewhat huge because of some big values. Do we need to clip? (change if required after seeing the result)
                 run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
                 # print("1: ", epochs_per_sample)
                 # print("+: ", self.remainder)
                 # print("2: ", epoch_of_next_sample)
-                # print("2max: ", np.ceil(epoch_of_next_sample.max()))
-                print(f"run_epoch: ", run_epoch)
+                # print(f"run_epoch: ", run_epoch)
                 print(f"max: ", epochs_per_sample.max())
+                # print("epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0])
 
             for epoch in range(run_epoch):
 
@@ -2073,6 +2162,8 @@ class UMAP(BaseEstimator):
             # this will be added next time
             self.remainder = np.subtract(epoch_of_next_sample, epoch)
 
+
+        ## NEED TO FIX
         elif self.condition == "nonsampling":
             self.epochs += 1
 
@@ -2255,33 +2346,42 @@ class UMAP(BaseEstimator):
         self._a, self._b = find_ab_params(self.spread, self.min_dist)
         self._metric_kwds = {}
         self.remainder = np.array([])
-        self.condition = "nonsampling"
+        self.condition = "sampling"
 
         # For smaller datasets we can use more epochs
         if self.N <= 10000:
             self.total_epochs = 500
         else:
-            self.total_epochs = 200
+            self.total_epochs = 1000
 
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
-        ops = 14
+        # ops = 300
+        ops = 3000
         self.epochs = 0
 
+        _, yy = load_mnist('data/fashion', kind='train')
+        _, yy_test = load_mnist('data/fashion', kind='t10k')
+        yy = np.append(yy, yy_test, axis=0)
+        # x = pca(x, no_dims=300).real
+        item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
         # run iteration (work progressively)
-        for iter in range(self.total_epochs):
+        # for _ in range(self.total_epochs):
+        while self.epochs < self.total_epochs:
+            print("epochs: ", self.epochs)
 
-            if iter == 4:
-                exit()
+            # if iter == 4:
+            #     exit()
 
             if(self.table.size() < self.N):
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
                 self.graph_ = adj_matrix
-                # print("adj matrix return success!")
+                print("adj matrix return success!")
+                print("size: ", self.table.size())
                 # print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
-
+            
             ######################
             # Embedding
             ######################
@@ -2298,17 +2398,61 @@ class UMAP(BaseEstimator):
             
             # THE END
 
-            embedding = self.progressive_optimize_layout(
+            # embedding = self.progressive_optimize_layout(
+            #     head_embedding=self.Y[:self.table.size()],
+            #     tail_embedding=self.Y[:self.table.size()],
+            #     graph=self.graph_,
+            #     # n_epochs=self.epochs,
+            #     a=self._a,
+            #     b=self._b,
+            #     random_state=self.random_state,
+            # )
+
+
+            self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
+            self.graph_.sum_duplicates()
+            # remove values smaller than the threshold (e.g., 1 / 200)
+            self.graph_.data[self.graph_.data < (self.graph_.data.max() / float(self.total_epochs))] = 0.0
+            self.graph_.eliminate_zeros()
+
+            # head: array of shape (n_1_simplices)
+            #     The indices of the heads of 1-simplices with non-zero membership.
+            head = self.graph_.row # first index
+            # tail: array of shape (n_1_simplices)
+            #     The indices of the tails of 1-simplices with non-zero membership.
+            tail = self.graph_.col # second index
+
+            epochs_per_sample = make_epochs_per_sample(self.graph_.data, self.total_epochs)
+
+            rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
+
+            embedding, eps = progressive_optimize_layout3(
                 head_embedding=self.Y[:self.table.size()],
                 tail_embedding=self.Y[:self.table.size()],
-                graph=self.graph_,
+                head=head,
+                tail=tail,
+                n_epochs=self.epochs,
+                total_epochs=self.total_epochs,
+                n_vertices = self.graph_.shape[1],
+                epochs_per_sample=epochs_per_sample,
                 a=self._a,
                 b=self._b,
-                random_state=self.random_state,
+                rng_state=rng_state,
             )
+
+            self.epochs = eps
 
             # normalize embedding (Y) (DO WE HAVE TO ??)
             # csr_graph = normalize(graph.tocsr(), norm="l1")
+
+            fig, ax = plt.subplots(1, figsize=(14, 10))
+            plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
+            plt.setp(ax, xticks=[], yticks=[])
+            cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+            cbar.set_ticks(np.arange(10))
+            cbar.set_ticklabels(item)
+            # plt.title('Fashion MNIST Embedded')
+            plt.savefig(f"./{self.epochs}.png")
 
             self.Y[:self.table.size()] = embedding
 

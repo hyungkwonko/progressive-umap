@@ -821,6 +821,8 @@ def optimize_layout(
     for n in range(n_epochs):
         for i in range(epochs_per_sample.shape[0]):
             if epoch_of_next_sample[i] <= n:
+
+
                 j = head[i]
                 k = tail[i]
 

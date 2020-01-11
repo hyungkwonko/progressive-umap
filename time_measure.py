@@ -105,7 +105,7 @@ def draw_plot(x, y, item, filename):
     cbar.set_ticks(np.arange(10))
     cbar.set_ticklabels(item)
     # plt.title('Fashion MNIST Embedded')
-    plt.savefig("./{}.png".format(filename))
+    plt.savefig(f"./{filename}.png")
 
 def run_umap(x, y, item, n_neighbors_list, min_dist=0.05, metric="euclidean", verbose=True):
     for i in n_neighbors_list:
@@ -129,16 +129,17 @@ if __name__ == "__main__":
     # digits = load_digits()
     # umap.UMAP(n_neighbors=5, min_dist=0.3, local_connectivity=1, metric='correlation', verbose=True).fit_transform(digits.data)
 
-    # # FASHION MNIST (6-70000, 784), 26MB
-    # # https://github.com/zalandoresearch/fashion-mnist
-    # x, y = load_mnist('data/fashion', kind='train')
-    # x_test, y_test = load_mnist('data/fashion', kind='t10k')
-    # x = np.append(x, x_test, axis=0)
-    # y = np.append(y, y_test, axis=0)
-    # # x = pca(x, no_dims=300).real
-    # item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
+    # FASHION MNIST (6-70000, 784), 26MB
+    # https://github.com/zalandoresearch/fashion-mnist
+    x, y = load_mnist('data/fashion', kind='train')
+    x_test, y_test = load_mnist('data/fashion', kind='t10k')
+    x = np.append(x, x_test, axis=0)
+    y = np.append(y, y_test, axis=0)
+    # x = pca(x, no_dims=300).real
+    item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
-    # # UMAP run
+    # UMAP run
+    run_umap(x=x, y=y, item=item, n_neighbors_list=[5])
     # run_umap(x=x, y=y, item=item, n_neighbors_list=[2,5,10,20,50])
     # # run_umap2(x=x, y=y, item=item, min_dist_list=[0.1,0.05, 0.01])
     # x_umap = umap.UMAP(n_neighbors=10, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x)
@@ -149,13 +150,13 @@ if __name__ == "__main__":
 
     # CIFAR 10 (60000, 3072), 163MB
     # http://www.cs.toronto.edu/~kriz/cifar.html
-    x2, y2, x_test2, y_test2 = get_CIFAR10_data(cifar10_dir = './data/cifar-10/')
-    x2 = np.append(x2, x_test2, axis=0)
-    y2 = np.append(y2, y_test2, axis=0)
-    item2 = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
+    # x2, y2, x_test2, y_test2 = get_CIFAR10_data(cifar10_dir = './data/cifar-10/')
+    # x2 = np.append(x2, x_test2, axis=0)
+    # y2 = np.append(y2, y_test2, axis=0)
+    # item2 = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]
 
     # UMAP run
-    run_umap(x=x2, y=y2, item=item2, n_neighbors_list=[5,20,50,100,200])
+    # run_umap(x=x2, y=y2, item=item2, n_neighbors_list=[5,20,50,100,200])
     # x_umap2 = umap.UMAP(n_neighbors=5, min_dist=0.3, metric='correlation', verbose=True).fit_transform(x2)
     # draw_plot(x_umap2, y2, item2, "umap_result2")
     # # t-SNE run
