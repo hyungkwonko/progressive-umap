@@ -1113,6 +1113,189 @@ def evaluate_error(similarities, Y, N, D, theta, ee_factor):
     return 0
 
 
+@numba.njit(fastmath=True)
+def progressive_compute_membership_strengths2(
+    updatedIds,
+    indexes,
+    distances,
+    rhos,
+    sigmas,
+    n_neighbors,
+    rows,
+    cols,
+    vals,):
+    """For selected indexes, construct the membership strength data for the 1-skeleton
+    of each local fuzzy simplicial set -- this is formed as a sparse matrix where each
+    row is a local fuzzy simplicial set, with a membership strength for the 1-simplex
+    to each other data point.
+
+    Parameters
+    ----------
+    updatedIds: list
+        indexes that need to be updated
+
+    Returns
+    -------
+    rows: array of shape (n_samples * n_neighbors)
+        Row data for the resulting sparse matrix (coo format)
+
+    cols: array of shape (n_samples * n_neighbors)
+        Column data for the resulting sparse matrix (coo format)
+
+    vals: array of shape (n_samples * n_neighbors)
+        Entries for the resulting sparse matrix (coo format)
+    """
+
+    for Aid in updatedIds: # point A
+        # the neighbors of Aid has been updated
+        for Bid in (indexes[Aid]): # point B
+
+            # index of B (e.g., indexes: [0 3 9 2 1] -> ix: [0 1 2 3 4])
+            ix = -1
+            for i in range(n_neighbors):
+                if indexes[Aid][i] == Bid:
+                    ix = i
+
+            if ix == -1:
+                raise ValueError("Error retrieving ix value")
+            
+            # if(len(ix) < 1):
+            #     raise ValueError("We didn't get the full knn for i")
+            # ix = ix[0]
+
+            if indexes[Aid, ix] == Aid:
+                val = 0.0
+            elif distances[Aid, ix] - rhos[Aid] <= 0.0:
+                val = 1.0
+            else:
+                val = np.exp(-((distances[Aid, ix] - rhos[Aid]) / (sigmas[Aid])))
+
+            rows[Aid * n_neighbors + ix] = Aid
+            cols[Aid * n_neighbors + ix] = Bid # indexes[Aid, ix]
+            vals[Aid * n_neighbors + ix] = val # sum of the vals = log2(k)*bandwidth
+
+            # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
+
+    return rows, cols, vals
+
+
+@numba.njit(fastmath=True)
+def progressive_smooth_knn_dist2(
+    updatedIds,
+    k,
+    n_iter,
+    local_connectivity,
+    bandwidth,
+    distances,
+    table_size,
+    rhos,
+    sigmas,):
+    """Compute a continuous version of the distance to the kth nearest
+    neighbor for selected rows. That is, this is similar to knn-distance but
+    allows continuous k values rather than requiring an integral k. In essence
+    we are simply computing the distance such that the cardinality of fuzzy set
+    we generate is k.
+
+    Parameters
+    ----------
+    distances: array of shape (n_samples, n_neighbors)
+        Distances to nearest neighbors for each samples. Each row should be a
+        sorted list of distances to a given samples nearest neighbors.
+    
+    updatedIds: list
+        Indexes we are goint to update getting sigmas and rhos
+
+    k: float
+        The number of nearest neighbors to approximate for.
+
+    n_iter: int (optional, default 64)
+        We need to binary search for the correct distance value. This is the
+        max number of iterations to use in such a search.
+
+    local_connectivity: int (optional, default 1)
+        The local connectivity required -- i.e. the number of nearest
+        neighbors that should be assumed to be connected at a local level.
+        The higher this value the more connected the manifold becomes
+        locally. In practice this should be not more than the local intrinsic
+        dimension of the manifold.
+
+    bandwidth: float (optional, default 1)
+        The target bandwidth of the kernel, larger values will produce
+        larger return values.
+
+    Returns
+    -------
+    result: array of shape(n_samples)
+        The normalization factor derived from the metric tensor approximation.
+
+    rho: array of shape(n_samples)
+        The local connectivity adjustment.
+    """
+    target = np.log2(k) * bandwidth # 2.3192...
+
+    mean_distances = np.mean(distances[:table_size])
+
+    for i in updatedIds:
+        lo = 0.0
+        hi = NPY_INFINITY
+        mid = 1.0
+
+        # TODO: This is very inefficient, but will do for now. FIXME
+        ## CALCULATE rhos[i]
+        ith_distances = distances[i] # ith_distances.shape = (1, 5)
+        non_zero_dists = ith_distances[ith_distances > 0.0] # select elements > 0.0
+        if non_zero_dists.shape[0] >= local_connectivity: # non_zero_dists.shape[0] = number of locally connected dots
+            index = int(np.floor(local_connectivity)) # local_connectivity = 1.0
+            interpolation = local_connectivity - index
+            if index > 0:
+                rhos[i] = non_zero_dists[index - 1]
+                if interpolation > SMOOTH_K_TOLERANCE: # SMOOTH_K_TOLERANCE = 1e-5
+                    rhos[i] += interpolation * (
+                        non_zero_dists[index] - non_zero_dists[index - 1]
+                    )
+            else: # if index == 0 (0 <= local_connectivity < 1)
+                rhos[i] = interpolation * non_zero_dists[0]
+        elif non_zero_dists.shape[0] > 0:
+            rhos[i] = np.max(non_zero_dists)
+
+        ## CALCULATE sigmas[i]
+        for n in range(n_iter):
+
+            psum = 0.0
+            for j in range(1, k): # range(1,k) => 1,2,...,k-1
+                d = distances[i, j] - rhos[i]
+                if d > 0:
+                    psum += np.exp(-(d / mid))
+                else:
+                    psum += 1.0
+
+            # break if it is lower than the threshold
+            if np.fabs(psum - target) < SMOOTH_K_TOLERANCE: # fabs: Compute the absolute values element-wise.
+                break
+
+            if psum > target:
+                hi = mid
+                mid = (lo + hi) / 2.0
+            else:
+                lo = mid
+                if hi == NPY_INFINITY:
+                    mid *= 2
+                else:
+                    mid = (lo + hi) / 2.0
+
+        sigmas[i] = mid
+
+        # TODO: This is very inefficient, but will do for now. FIXME
+        if rhos[i] > 0.0:
+            mean_ith_distances = np.mean(ith_distances)
+            if sigmas[i] < MIN_K_DIST_SCALE * mean_ith_distances:
+                sigmas[i] = MIN_K_DIST_SCALE * mean_ith_distances
+        else:
+            if sigmas[i] < MIN_K_DIST_SCALE * mean_distances:
+                sigmas[i] = MIN_K_DIST_SCALE * mean_distances
+
+    return rhos, sigmas
+
 @numba.njit(fastmath=True, parallel=True)
 def progressive_optimize_layout3(
     head_embedding,
@@ -1129,8 +1312,7 @@ def progressive_optimize_layout3(
     gamma=1.0,
     initial_alpha=1.0,
     negative_sample_rate=5.0,
-    verbose=False,
-):
+    verbose=False):
 
     dim = head_embedding.shape[1]
     move_other = head_embedding.shape[0] == tail_embedding.shape[0]
@@ -1802,12 +1984,23 @@ class UMAP(BaseEstimator):
         '''
         EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
         '''
-        self.progressive_smooth_knn_dist(self.distances, updatedIds, self.n_neighbors, n_iter=200,
+        zzz = ts()
+
+        self.progressive_smooth_knn_dist(updatedIds, self.n_neighbors, n_iter=200,
             local_connectivity=1.0, bandwidth=1.0)
+
+        # self.rhos, self.sigmas = progressive_smooth_knn_dist2(updatedIds, self.n_neighbors, 64, 1.0, 1.0,
+        #     self.distances, self.table.size(), self.rhos, self.sigmas,)
+
         # print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
 
         # progressive_compute_membership_strengths
-        self.progressive_compute_membership_strengths(updatedIds)
+        self.progressive_compute_membership_strengths(updatedIds) # without numba
+        # self.rows, self.cols, self.vals = progressive_compute_membership_strengths2(updatedIds,
+        #     self.indexes, self.distances, self.rhos, self.sigmas, self.n_neighbors, self.rows,
+        #     self.cols, self.vals)
+
+        print("time: ", ts() - ts())
 
         result = scipy.sparse.coo_matrix(
             (self.vals, (self.rows, self.cols)), shape=(self.table.size(), self.table.size())
@@ -1879,7 +2072,7 @@ class UMAP(BaseEstimator):
                 # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
 
 
-    def progressive_smooth_knn_dist(self, distances, updatedIds, k, n_iter=64,
+    def progressive_smooth_knn_dist(self, updatedIds, k, n_iter=64,
         local_connectivity=1.0, bandwidth=1.0):
         """Compute a continuous version of the distance to the kth nearest
         neighbor for selected rows. That is, this is similar to knn-distance but
@@ -1985,7 +2178,6 @@ class UMAP(BaseEstimator):
                 if self.sigmas[i] < MIN_K_DIST_SCALE * mean_distances:
                     self.sigmas[i] = MIN_K_DIST_SCALE * mean_distances
                     
-
 
     def progressive_optimize_layout(
         self,
@@ -2322,7 +2514,6 @@ class UMAP(BaseEstimator):
         # Set random seed
         self.random_state = check_random_state(self.random_state)
 
-
         self.N = X.shape[0]
 
         # initialize table & neighbors & distances
@@ -2352,12 +2543,12 @@ class UMAP(BaseEstimator):
         if self.N <= 10000:
             self.total_epochs = 500
         else:
-            self.total_epochs = 1000
+            self.total_epochs = 200
 
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         # ops = 300
-        ops = 3000
+        ops = 50000
         self.epochs = 0
 
         _, yy = load_mnist('data/fashion', kind='train')
@@ -2445,14 +2636,14 @@ class UMAP(BaseEstimator):
             # normalize embedding (Y) (DO WE HAVE TO ??)
             # csr_graph = normalize(graph.tocsr(), norm="l1")
 
-            fig, ax = plt.subplots(1, figsize=(14, 10))
-            plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
-            plt.setp(ax, xticks=[], yticks=[])
-            cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-            cbar.set_ticks(np.arange(10))
-            cbar.set_ticklabels(item)
-            # plt.title('Fashion MNIST Embedded')
-            plt.savefig(f"./{self.epochs}.png")
+            # fig, ax = plt.subplots(1, figsize=(14, 10))
+            # plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
+            # plt.setp(ax, xticks=[], yticks=[])
+            # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+            # cbar.set_ticks(np.arange(10))
+            # cbar.set_ticklabels(item)
+            # # plt.title('Fashion MNIST Embedded')
+            # plt.savefig(f"./{self.epochs}.png")
 
             self.Y[:self.table.size()] = embedding
 
