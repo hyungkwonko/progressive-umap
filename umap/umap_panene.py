@@ -41,6 +41,7 @@ from umap.spectral import spectral_layout
 import locale
 
 from pynene import KNNTable
+import math
 
 from time_measure import draw_plot, load_mnist
 from matplotlib import pyplot as plt
@@ -1091,6 +1092,7 @@ def compute_gradient(similarities, Y, N, D, dY, theta, ee_factor):
     '''
     return 0
 
+
 def evaluate_error(similarities, Y, N, D, theta, ee_factor):
     '''
     EVALUATE ERROR 
@@ -1177,7 +1179,6 @@ def progressive_compute_membership_strengths2(
             # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
 
     return rows, cols, vals
-
 
 @numba.njit(fastmath=True)
 def progressive_smooth_knn_dist2(
@@ -1297,7 +1298,7 @@ def progressive_smooth_knn_dist2(
     return rhos, sigmas
 
 @numba.njit(fastmath=True, parallel=True)
-def progressive_optimize_layout3(
+def progressive_optimize_layout2(
     head_embedding,
     tail_embedding,
     head,
@@ -1321,8 +1322,6 @@ def progressive_optimize_layout3(
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
 
-    ratio = 1.0 - (float(n_epochs) / float(total_epochs))
-
     # epochs_per_sample[epochs_per_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
     # epoch_of_next_sample[epoch_of_next_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
     if n_epochs < total_epochs * 0.5:
@@ -1331,30 +1330,35 @@ def progressive_optimize_layout3(
     else:
         epochs_per_sample[epochs_per_sample > 30 ] = 30
         epoch_of_next_sample[epoch_of_next_sample > 30] = 30
-        # epochs_per_sample[epochs_per_sample > epochs_per_sample.max() * ratio ] = epochs_per_sample.max() * ratio + 1
-        # epoch_of_next_sample[epoch_of_next_sample > epoch_of_next_sample.max() * ratio] = epoch_of_next_sample.max() * ratio + 5
+        # epochs_per_sample[epochs_per_sample > epochs_per_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs)) ] = epochs_per_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs)) + 1
+        # epoch_of_next_sample[epoch_of_next_sample > epoch_of_next_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs))] = epoch_of_next_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs)) + 5
 
     run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
     for n in range(run_epoch):
-        alpha = initial_alpha * ratio
-        n_epochs += 1
+        alpha = initial_alpha * 1.0 - (float(n_epochs) / float(total_epochs))
+
+        if n_epochs >= total_epochs:
+            break
+
+        # cost = 0
 
         for i in range(epochs_per_sample.shape[0]):
             if epoch_of_next_sample[i] <= n:
 
+                j = head[i] # first index
+                k = tail[i] # second index
 
-                j = head[i]
-                k = tail[i]
+                current = head_embedding[j] # position of j index in embedded space
+                other = tail_embedding[k] # position of k index in embedded space
 
-                current = head_embedding[j]
-                other = tail_embedding[k]
+                dist_squared = rdist(current, other) # if embedding space is 2D (x1-x2)^2 + (y1-y2)^2
 
-                dist_squared = rdist(current, other)
-
-                if dist_squared > 0.0:
+                if dist_squared > 0.0: # if they are not the same pts
                     grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
                     grad_coeff /= a * pow(dist_squared, b) + 1.0
+                    # c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
+                    # cost -= math.log(c1)
                 else:
                     grad_coeff = 0.0
 
@@ -1380,9 +1384,10 @@ def progressive_optimize_layout3(
 
                     if dist_squared > 0.0:
                         grad_coeff = 2.0 * gamma * b
-                        grad_coeff /= (0.001 + dist_squared) * (
-                            a * pow(dist_squared, b) + 1
-                        )
+                        grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
+                        # c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
+                        # cost -= gamma * math.log(c2)
+
                     elif j == k:
                         continue
                     else:
@@ -1398,11 +1403,12 @@ def progressive_optimize_layout3(
                 epoch_of_next_negative_sample[i] += (
                     n_neg_samples * epochs_per_negative_sample[i]
                 )
+        n_epochs += 1
 
         if verbose and n % int(n_epochs / 10) == 0:
             print("\tcompleted ", n, " / ", n_epochs, "epochs")
     return head_embedding, n_epochs
-
+    # return head_embedding, n_epochs, cost
 
 
 
@@ -1995,23 +2001,18 @@ class UMAP(BaseEstimator):
         '''
         EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
         '''
-        zzz = ts()
-
-        self.progressive_smooth_knn_dist(updatedIds, self.n_neighbors, n_iter=200,
-            local_connectivity=1.0, bandwidth=1.0)
-
-        # self.rhos, self.sigmas = progressive_smooth_knn_dist2(updatedIds, self.n_neighbors, 64, 1.0, 1.0,
-        #     self.distances, self.table.size(), self.rhos, self.sigmas,)
+        # self.progressive_smooth_knn_dist(updatedIds, self.n_neighbors, n_iter=200,
+        #     local_connectivity=1.0, bandwidth=1.0)
+        self.rhos, self.sigmas = progressive_smooth_knn_dist2(updatedIds, self.n_neighbors, 64, 1.0, 1.0,
+            self.distances, self.table.size(), self.rhos, self.sigmas,)
 
         # print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
 
         # progressive_compute_membership_strengths
-        self.progressive_compute_membership_strengths(updatedIds) # without numba
-        # self.rows, self.cols, self.vals = progressive_compute_membership_strengths2(updatedIds,
-        #     self.indexes, self.distances, self.rhos, self.sigmas, self.n_neighbors, self.rows,
-        #     self.cols, self.vals)
-
-        print("time: ", ts() - ts())
+        # self.progressive_compute_membership_strengths(updatedIds) # without numba
+        self.rows, self.cols, self.vals = progressive_compute_membership_strengths2(updatedIds,
+            self.indexes, self.distances, self.rhos, self.sigmas, self.n_neighbors, self.rows,
+            self.cols, self.vals)
 
         result = scipy.sparse.coo_matrix(
             (self.vals, (self.rows, self.cols)), shape=(self.table.size(), self.table.size())
@@ -2033,6 +2034,393 @@ class UMAP(BaseEstimator):
         # print(result)
 
         return result # return COO matrix
+
+
+    def run(self, X, y=None):
+        '''
+        RUN 
+        ----------
+        Progressively perform UMAP using PANENE's KNN Table
+
+        1. initialize KNN Table
+        2. Normalize input data
+        3. (randomly) initialize Y
+        4. run iteration (max_iter)
+            - calculate early exaggeration factor
+            - if size < N (left points are waiting to be added)
+                - update similarity matrix (update_similarity())
+            - compute gradient (compute_graident())
+            - update gradient
+            - recalculate cost & update Y
+
+        Parameters
+        ----------
+        X: 2D data array
+        N: number of rows
+        D: input dimension
+        Y: embedded output = (n * self.n_components) 2D array
+        self.n_components: output dimension
+        perplexity: a perplexity value (e.g., 2.51)
+        theta: 
+        rand_seed: 
+        max_iter: maximum iteration number
+
+        Returns
+        -------
+        None
+        '''
+
+        # check array: the input is checked to be a non-empty 2D array containing only finite values.
+        X = check_array(X, dtype=np.float32, accept_sparse="csr")
+        self._raw_data = X
+
+        # Handle all the optional arguments, setting default
+        if self.a is None or self.b is None:
+            self._a, self._b = find_ab_params(self.spread, self.min_dist)
+        else:
+            self._a = self.a
+            self._b = self.b
+
+        if self.metric_kwds is not None:
+            self._metric_kwds = self.metric_kwds
+        else:
+            self._metric_kwds = {}
+
+        if self.target_metric_kwds is not None:
+            self._target_metric_kwds = self.target_metric_kwds
+        else:
+            self._target_metric_kwds = {}
+
+        if isinstance(self.init, np.ndarray):
+            init = check_array(self.init, dtype=np.float32, accept_sparse=False)
+        else:
+            init = self.init
+
+        self.alpha = self._initial_alpha = self.learning_rate
+
+        # Check parameters
+        self._validate_parameters()
+
+        if self.verbose:
+            print(str(self))
+            
+        # Error check n_neighbors based on data size
+        if X.shape[0] <= self.n_neighbors:
+            if X.shape[0] == 1:
+                self.embedding_ = np.zeros(
+                    (1, self.n_components)
+                )  # needed to sklearn comparability
+                return self
+
+            warn(
+                "n_neighbors is larger than the dataset size; truncating to "
+                "X.shape[0] - 1"
+            )
+            self._n_neighbors = X.shape[0] - 1
+        else:
+            self._n_neighbors = self.n_neighbors
+
+        if scipy.sparse.isspmatrix_csr(X):
+            if not X.has_sorted_indices:
+                X.sort_indices()
+            self._sparse_data = True
+        else:
+            self._sparse_data = False
+
+        # Set random seed
+        self.random_state = check_random_state(self.random_state)
+
+        self.N = X.shape[0]
+
+        # initialize table & neighbors & distances
+        self.indexes = np.zeros((self.N, self.n_neighbors), dtype=np.int64) # with np.in32, it is not optimized
+        self.distances = np.zeros((self.N, self.n_neighbors), dtype=np.float32)
+
+        # initialize sigmas and rhos
+        self.sigmas = np.zeros(self.N, dtype=np.float32)
+        self.rhos = np.zeros(self.N, dtype=np.float32)
+
+        # initialize random Y value following Uniform distribution
+        self.Y = np.array(self.random_state.uniform(
+            low=-10.0, high=10.0, size=(self.N, self.n_components)
+        ).astype(np.float32))
+        self.table = KNNTable(X, self.n_neighbors, self.indexes, self.distances)
+
+        # initialize elements of COO matrix
+        self.rows = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
+        self.cols = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
+        self.vals = np.zeros((self.N * self.n_neighbors), dtype=np.float32)
+
+        # initializing embedding position (pseudo values for test)
+        self._a, self._b = find_ab_params(self.spread, self.min_dist)
+        self._metric_kwds = {}
+        self.remainder = np.array([])
+        self.condition = "sampling"
+
+        # For smaller datasets we can use more epochs
+        if self.N <= 10000:
+            self.total_epochs = 500
+        else:
+            self.total_epochs = 500
+
+        # self.min_dist = min_dist
+        # self.local_connectivity = local_connectivity
+        # ops = 300
+        ops = 300
+        self.epochs = 0
+
+        _, yy = load_mnist('data/fashion', kind='train')
+        _, yy_test = load_mnist('data/fashion', kind='t10k')
+        yy = np.append(yy, yy_test, axis=0)
+        # x = pca(x, no_dims=300).real
+        item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
+
+        # run iteration (work progressively)
+        # for _ in range(self.total_epochs):
+        while self.epochs < self.total_epochs:
+
+            # if iter == 4:
+            #     exit()
+
+            if(self.table.size() < self.N):
+                # get COO formatted adjacency matrix
+                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
+                self.graph_ = adj_matrix
+                print("adj matrix return success!")
+                print("size: ", self.table.size())
+                # print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
+            
+            ######################
+            # Embedding
+            ######################
+
+            # Set initial position (DONE)
+
+            # Compute gradient
+
+            # update gains
+
+            # perform gradient update
+            
+            # print out progress
+            
+            # THE END
+
+            # embedding = self.progressive_optimize_layout(
+            #     head_embedding=self.Y[:self.table.size()],
+            #     tail_embedding=self.Y[:self.table.size()],
+            #     graph=self.graph_,
+            #     # n_epochs=self.epochs,
+            #     a=self._a,
+            #     b=self._b,
+            #     random_state=self.random_state,
+            # )
+
+
+            self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
+            self.graph_.sum_duplicates()
+            # remove values smaller than the threshold (e.g., 1 / 200)
+            self.graph_.data[self.graph_.data < (self.graph_.data.max() / float(self.total_epochs))] = 0.0
+            self.graph_.eliminate_zeros()
+
+            # head: array of shape (n_1_simplices)
+            #     The indices of the heads of 1-simplices with non-zero membership.
+            head = self.graph_.row # first index
+            # tail: array of shape (n_1_simplices)
+            #     The indices of the tails of 1-simplices with non-zero membership.
+            tail = self.graph_.col # second index
+
+            epochs_per_sample = make_epochs_per_sample(self.graph_.data, self.total_epochs)
+
+            rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
+
+            embedding, eps = progressive_optimize_layout2(
+                head_embedding=self.Y[:self.table.size()],
+                tail_embedding=self.Y[:self.table.size()],
+                head=head,
+                tail=tail,
+                n_epochs=self.epochs,
+                total_epochs=self.total_epochs,
+                n_vertices = self.graph_.shape[1],
+                epochs_per_sample=epochs_per_sample,
+                a=self._a,
+                b=self._b,
+                rng_state=rng_state,
+            )
+
+            self.epochs = eps
+
+            # normalize embedding (Y) (DO WE HAVE TO ??)
+            # csr_graph = normalize(graph.tocsr(), norm="l1")
+
+            # fig, ax = plt.subplots(1, figsize=(14, 10))
+            # plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
+            # plt.setp(ax, xticks=[], yticks=[])
+            # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+            # cbar.set_ticks(np.arange(10))
+            # cbar.set_ticklabels(item)
+            # # plt.title('Fashion MNIST Embedded')
+            # plt.savefig(f"./test_img/{self.epochs}.png")
+
+            self.Y[:self.table.size()] = embedding
+
+            # print(embedding)
+            print(f"current epochs: {self.epochs}, cost: {cost}")
+
+
+        self._input_hash = joblib.hash(self._raw_data)
+
+        return self
+
+
+    @measure_time
+    def fit_transform(self, X, y=None):
+        """Fit X into an embedded space and return that transformed
+        output.
+
+        Parameters
+        ----------
+        X : array, shape (n_samples, n_features) or (n_samples, n_samples)
+            If the metric is 'precomputed' X must be a square distance
+            matrix. Otherwise it contains a sample per row.
+
+        y : array, shape (n_samples)
+            A target array for supervised dimension reduction. How this is
+            handled is determined by parameters UMAP was instantiated with.
+            The relevant attributes are ``target_metric`` and
+            ``target_metric_kwds``.
+
+        Returns
+        -------
+        X_new : array, shape (n_samples, n_components)
+            Embedding of the training data in low-dimensional space.
+        """
+        self.run(X, y)
+        return self.Y[:self.table.size()]
+        # return self.Y
+
+    def transform(self, X):
+        """Transform X into the existing embedded space and return that
+        transformed output.
+
+        Parameters
+        ----------
+        X : array, shape (n_samples, n_features)
+            New data to be transformed.
+
+        Returns
+        -------
+        X_new : array, shape (n_samples, n_components)
+            Embedding of the new data in low-dimensional space.
+        """
+        # If we fit just a single instance then error
+        if self.embedding_.shape[0] == 1:
+            raise ValueError(
+                "Transform unavailable when model was fit with"
+                "only a single data sample."
+            )
+        # If we just have the original input then short circuit things
+        X = check_array(X, dtype=np.float32, accept_sparse="csr")
+        x_hash = joblib.hash(X)
+        if x_hash == self._input_hash:
+            return self.embedding_
+
+        if self._sparse_data:
+            raise ValueError("Transform not available for sparse input.")
+        elif self.metric == "precomputed":
+            raise ValueError(
+                "Transform  of new data not available for " "precomputed metric."
+            )
+
+        X = check_array(X, dtype=np.float32, order="C")
+        random_state = check_random_state(self.transform_seed)
+        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
+
+        if self._small_data:
+            dmat = pairwise_distances(
+                X, self._raw_data, metric=self.metric, **self._metric_kwds
+            )
+            indices = np.argpartition(dmat, self._n_neighbors)[:, : self._n_neighbors]
+            dmat_shortened = submatrix(dmat, indices, self._n_neighbors)
+            indices_sorted = np.argsort(dmat_shortened)
+            indices = submatrix(indices, indices_sorted, self._n_neighbors)
+            dists = submatrix(dmat_shortened, indices_sorted, self._n_neighbors)
+        else:
+            init = initialise_search(
+                self._rp_forest,
+                self._raw_data,
+                X,
+                int(self._n_neighbors * self.transform_queue_size),
+                self._random_init,
+                self._tree_init,
+                rng_state,
+            )
+            result = self._search(
+                self._raw_data,
+                self._search_graph.indptr,
+                self._search_graph.indices,
+                init,
+                X,
+            )
+
+            indices, dists = deheap_sort(result)
+            indices = indices[:, : self._n_neighbors]
+            dists = dists[:, : self._n_neighbors]
+
+        adjusted_local_connectivity = max(0, self.local_connectivity - 1.0)
+        sigmas, rhos = smooth_knn_dist(
+            dists, self._n_neighbors, local_connectivity=adjusted_local_connectivity
+        )
+
+        rows, cols, vals = compute_membership_strengths(indices, dists, sigmas, rhos)
+
+        graph = scipy.sparse.coo_matrix(
+            (vals, (rows, cols)), shape=(X.shape[0], self._raw_data.shape[0])
+        )
+
+        # This was a very specially constructed graph with constant degree.
+        # That lets us do fancy unpacking by reshaping the csr matrix indices
+        # and data. Doing so relies on the constant degree assumption!
+        csr_graph = normalize(graph.tocsr(), norm="l1")
+        inds = csr_graph.indices.reshape(X.shape[0], self._n_neighbors)
+        weights = csr_graph.data.reshape(X.shape[0], self._n_neighbors)
+        embedding = init_transform(inds, weights, self.embedding_)
+
+        if self.n_epochs is None:
+            # For smaller datasets we can use more epochs
+            if graph.shape[0] <= 10000:
+                n_epochs = 100
+            else:
+                n_epochs = 30
+        else:
+            n_epochs = self.n_epochs // 3.0
+
+        graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
+        graph.eliminate_zeros()
+
+        epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
+
+        head = graph.row
+        tail = graph.col
+
+        embedding = optimize_layout(
+            embedding,
+            self.embedding_.astype(np.float32, copy=False),  # Fix #179
+            head,
+            tail,
+            n_epochs,
+            graph.shape[1],
+            epochs_per_sample,
+            self._a,
+            self._b,
+            rng_state,
+            self.repulsion_strength,
+            self._initial_alpha,
+            self.negative_sample_rate,
+            verbose=self.verbose,
+        )
+
+        return embedding
 
 
     def progressive_compute_membership_strengths(self, updatedIds):
@@ -2188,7 +2576,7 @@ class UMAP(BaseEstimator):
             else:
                 if self.sigmas[i] < MIN_K_DIST_SCALE * mean_distances:
                     self.sigmas[i] = MIN_K_DIST_SCALE * mean_distances
-                    
+
 
     def progressive_optimize_layout(
         self,
@@ -2429,389 +2817,3 @@ class UMAP(BaseEstimator):
                 print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
             
         return head_embedding
-
-
-    def run(self, X, y=None):
-        '''
-        RUN 
-        ----------
-        Progressively perform UMAP using PANENE's KNN Table
-
-        1. initialize KNN Table
-        2. Normalize input data
-        3. (randomly) initialize Y
-        4. run iteration (max_iter)
-            - calculate early exaggeration factor
-            - if size < N (left points are waiting to be added)
-                - update similarity matrix (update_similarity())
-            - compute gradient (compute_graident())
-            - update gradient
-            - recalculate cost & update Y
-
-        Parameters
-        ----------
-        X: 2D data array
-        N: number of rows
-        D: input dimension
-        Y: embedded output = (n * self.n_components) 2D array
-        self.n_components: output dimension
-        perplexity: a perplexity value (e.g., 2.51)
-        theta: 
-        rand_seed: 
-        max_iter: maximum iteration number
-
-        Returns
-        -------
-        None
-        '''
-
-        # check array: the input is checked to be a non-empty 2D array containing only finite values.
-        X = check_array(X, dtype=np.float32, accept_sparse="csr")
-        self._raw_data = X
-
-        # Handle all the optional arguments, setting default
-        if self.a is None or self.b is None:
-            self._a, self._b = find_ab_params(self.spread, self.min_dist)
-        else:
-            self._a = self.a
-            self._b = self.b
-
-        if self.metric_kwds is not None:
-            self._metric_kwds = self.metric_kwds
-        else:
-            self._metric_kwds = {}
-
-        if self.target_metric_kwds is not None:
-            self._target_metric_kwds = self.target_metric_kwds
-        else:
-            self._target_metric_kwds = {}
-
-        if isinstance(self.init, np.ndarray):
-            init = check_array(self.init, dtype=np.float32, accept_sparse=False)
-        else:
-            init = self.init
-
-        self.alpha = self._initial_alpha = self.learning_rate
-
-        # Check parameters
-        self._validate_parameters()
-
-        if self.verbose:
-            print(str(self))
-            
-        # Error check n_neighbors based on data size
-        if X.shape[0] <= self.n_neighbors:
-            if X.shape[0] == 1:
-                self.embedding_ = np.zeros(
-                    (1, self.n_components)
-                )  # needed to sklearn comparability
-                return self
-
-            warn(
-                "n_neighbors is larger than the dataset size; truncating to "
-                "X.shape[0] - 1"
-            )
-            self._n_neighbors = X.shape[0] - 1
-        else:
-            self._n_neighbors = self.n_neighbors
-
-        if scipy.sparse.isspmatrix_csr(X):
-            if not X.has_sorted_indices:
-                X.sort_indices()
-            self._sparse_data = True
-        else:
-            self._sparse_data = False
-
-        # Set random seed
-        self.random_state = check_random_state(self.random_state)
-
-        self.N = X.shape[0]
-
-        # initialize table & neighbors & distances
-        self.indexes = np.zeros((self.N, self.n_neighbors), dtype=np.int64) # with np.in32, it is not optimized
-        self.distances = np.zeros((self.N, self.n_neighbors), dtype=np.float32)
-
-        # initialize sigmas and rhos
-        self.sigmas = np.zeros(self.N, dtype=np.float32)
-        self.rhos = np.zeros(self.N, dtype=np.float32)
-
-        # initialize random Y value following Uniform distribution
-        self.Y = np.array(self.random_state.uniform(
-            low=-10.0, high=10.0, size=(self.N, self.n_components)
-        ).astype(np.float32))
-        self.table = KNNTable(X, self.n_neighbors, self.indexes, self.distances)
-
-        # initialize elements of COO matrix
-        self.rows = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
-        self.cols = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
-        self.vals = np.zeros((self.N * self.n_neighbors), dtype=np.float32)
-
-        # initializing embedding position (pseudo values for test)
-        self._a, self._b = find_ab_params(self.spread, self.min_dist)
-        self._metric_kwds = {}
-        self.remainder = np.array([])
-        self.condition = "sampling"
-
-        # For smaller datasets we can use more epochs
-        if self.N <= 10000:
-            self.total_epochs = 500
-        else:
-            self.total_epochs = 200
-
-        # self.min_dist = min_dist
-        # self.local_connectivity = local_connectivity
-        # ops = 300
-        ops = 50000
-        self.epochs = 0
-
-        _, yy = load_mnist('data/fashion', kind='train')
-        _, yy_test = load_mnist('data/fashion', kind='t10k')
-        yy = np.append(yy, yy_test, axis=0)
-        # x = pca(x, no_dims=300).real
-        item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
-
-        # run iteration (work progressively)
-        # for _ in range(self.total_epochs):
-        while self.epochs < self.total_epochs:
-            print("epochs: ", self.epochs)
-
-            # if iter == 4:
-            #     exit()
-
-            if(self.table.size() < self.N):
-                # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
-                self.graph_ = adj_matrix
-                print("adj matrix return success!")
-                print("size: ", self.table.size())
-                # print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
-            
-            ######################
-            # Embedding
-            ######################
-
-            # Set initial position (DONE)
-
-            # Compute gradient
-
-            # update gains
-
-            # perform gradient update
-            
-            # print out progress
-            
-            # THE END
-
-            # embedding = self.progressive_optimize_layout(
-            #     head_embedding=self.Y[:self.table.size()],
-            #     tail_embedding=self.Y[:self.table.size()],
-            #     graph=self.graph_,
-            #     # n_epochs=self.epochs,
-            #     a=self._a,
-            #     b=self._b,
-            #     random_state=self.random_state,
-            # )
-
-
-            self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
-            self.graph_.sum_duplicates()
-            # remove values smaller than the threshold (e.g., 1 / 200)
-            self.graph_.data[self.graph_.data < (self.graph_.data.max() / float(self.total_epochs))] = 0.0
-            self.graph_.eliminate_zeros()
-
-            # head: array of shape (n_1_simplices)
-            #     The indices of the heads of 1-simplices with non-zero membership.
-            head = self.graph_.row # first index
-            # tail: array of shape (n_1_simplices)
-            #     The indices of the tails of 1-simplices with non-zero membership.
-            tail = self.graph_.col # second index
-
-            epochs_per_sample = make_epochs_per_sample(self.graph_.data, self.total_epochs)
-
-            rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
-
-            embedding, eps = progressive_optimize_layout3(
-                head_embedding=self.Y[:self.table.size()],
-                tail_embedding=self.Y[:self.table.size()],
-                head=head,
-                tail=tail,
-                n_epochs=self.epochs,
-                total_epochs=self.total_epochs,
-                n_vertices = self.graph_.shape[1],
-                epochs_per_sample=epochs_per_sample,
-                a=self._a,
-                b=self._b,
-                rng_state=rng_state,
-            )
-
-            self.epochs = eps
-
-            # normalize embedding (Y) (DO WE HAVE TO ??)
-            # csr_graph = normalize(graph.tocsr(), norm="l1")
-
-            # fig, ax = plt.subplots(1, figsize=(14, 10))
-            # plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
-            # plt.setp(ax, xticks=[], yticks=[])
-            # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-            # cbar.set_ticks(np.arange(10))
-            # cbar.set_ticklabels(item)
-            # # plt.title('Fashion MNIST Embedded')
-            # plt.savefig(f"./test_img/{self.epochs}.png")
-
-            self.Y[:self.table.size()] = embedding
-
-            # print(embedding)
-
-        self._input_hash = joblib.hash(self._raw_data)
-
-        return self
-
-
-    @measure_time
-    def fit_transform(self, X, y=None):
-        """Fit X into an embedded space and return that transformed
-        output.
-
-        Parameters
-        ----------
-        X : array, shape (n_samples, n_features) or (n_samples, n_samples)
-            If the metric is 'precomputed' X must be a square distance
-            matrix. Otherwise it contains a sample per row.
-
-        y : array, shape (n_samples)
-            A target array for supervised dimension reduction. How this is
-            handled is determined by parameters UMAP was instantiated with.
-            The relevant attributes are ``target_metric`` and
-            ``target_metric_kwds``.
-
-        Returns
-        -------
-        X_new : array, shape (n_samples, n_components)
-            Embedding of the training data in low-dimensional space.
-        """
-        self.run(X, y)
-        return self.Y[:self.table.size()]
-        # return self.Y
-
-    def transform(self, X):
-        """Transform X into the existing embedded space and return that
-        transformed output.
-
-        Parameters
-        ----------
-        X : array, shape (n_samples, n_features)
-            New data to be transformed.
-
-        Returns
-        -------
-        X_new : array, shape (n_samples, n_components)
-            Embedding of the new data in low-dimensional space.
-        """
-        # If we fit just a single instance then error
-        if self.embedding_.shape[0] == 1:
-            raise ValueError(
-                "Transform unavailable when model was fit with"
-                "only a single data sample."
-            )
-        # If we just have the original input then short circuit things
-        X = check_array(X, dtype=np.float32, accept_sparse="csr")
-        x_hash = joblib.hash(X)
-        if x_hash == self._input_hash:
-            return self.embedding_
-
-        if self._sparse_data:
-            raise ValueError("Transform not available for sparse input.")
-        elif self.metric == "precomputed":
-            raise ValueError(
-                "Transform  of new data not available for " "precomputed metric."
-            )
-
-        X = check_array(X, dtype=np.float32, order="C")
-        random_state = check_random_state(self.transform_seed)
-        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64)
-
-        if self._small_data:
-            dmat = pairwise_distances(
-                X, self._raw_data, metric=self.metric, **self._metric_kwds
-            )
-            indices = np.argpartition(dmat, self._n_neighbors)[:, : self._n_neighbors]
-            dmat_shortened = submatrix(dmat, indices, self._n_neighbors)
-            indices_sorted = np.argsort(dmat_shortened)
-            indices = submatrix(indices, indices_sorted, self._n_neighbors)
-            dists = submatrix(dmat_shortened, indices_sorted, self._n_neighbors)
-        else:
-            init = initialise_search(
-                self._rp_forest,
-                self._raw_data,
-                X,
-                int(self._n_neighbors * self.transform_queue_size),
-                self._random_init,
-                self._tree_init,
-                rng_state,
-            )
-            result = self._search(
-                self._raw_data,
-                self._search_graph.indptr,
-                self._search_graph.indices,
-                init,
-                X,
-            )
-
-            indices, dists = deheap_sort(result)
-            indices = indices[:, : self._n_neighbors]
-            dists = dists[:, : self._n_neighbors]
-
-        adjusted_local_connectivity = max(0, self.local_connectivity - 1.0)
-        sigmas, rhos = smooth_knn_dist(
-            dists, self._n_neighbors, local_connectivity=adjusted_local_connectivity
-        )
-
-        rows, cols, vals = compute_membership_strengths(indices, dists, sigmas, rhos)
-
-        graph = scipy.sparse.coo_matrix(
-            (vals, (rows, cols)), shape=(X.shape[0], self._raw_data.shape[0])
-        )
-
-        # This was a very specially constructed graph with constant degree.
-        # That lets us do fancy unpacking by reshaping the csr matrix indices
-        # and data. Doing so relies on the constant degree assumption!
-        csr_graph = normalize(graph.tocsr(), norm="l1")
-        inds = csr_graph.indices.reshape(X.shape[0], self._n_neighbors)
-        weights = csr_graph.data.reshape(X.shape[0], self._n_neighbors)
-        embedding = init_transform(inds, weights, self.embedding_)
-
-        if self.n_epochs is None:
-            # For smaller datasets we can use more epochs
-            if graph.shape[0] <= 10000:
-                n_epochs = 100
-            else:
-                n_epochs = 30
-        else:
-            n_epochs = self.n_epochs // 3.0
-
-        graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
-        graph.eliminate_zeros()
-
-        epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
-
-        head = graph.row
-        tail = graph.col
-
-        embedding = optimize_layout(
-            embedding,
-            self.embedding_.astype(np.float32, copy=False),  # Fix #179
-            head,
-            tail,
-            n_epochs,
-            graph.shape[1],
-            epochs_per_sample,
-            self._a,
-            self._b,
-            rng_state,
-            self.repulsion_strength,
-            self._initial_alpha,
-            self.negative_sample_rate,
-            verbose=self.verbose,
-        )
-
-        return embedding
