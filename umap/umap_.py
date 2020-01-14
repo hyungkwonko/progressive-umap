@@ -38,6 +38,7 @@ from umap.nndescent import (
 from umap.spectral import spectral_layout
 
 import locale
+import math
 
 locale.setlocale(locale.LC_NUMERIC, "C")
 
@@ -886,6 +887,121 @@ def optimize_layout(
     return head_embedding
 
 @measure_time
+@numba.njit(fastmath=True, parallel=True)
+def optimize_layout2(
+    head_embedding,
+    tail_embedding,
+    head,
+    tail,
+    n_epochs,
+    n_vertices,
+    epochs_per_sample,
+    a,
+    b,
+    rng_state,
+    gamma=1.0,
+    initial_alpha=1.0,
+    negative_sample_rate=5.0,
+    verbose=False):
+
+    dim = head_embedding.shape[1]
+    move_other = head_embedding.shape[0] == tail_embedding.shape[0]
+    alpha = initial_alpha
+
+    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+    epoch_of_next_sample = epochs_per_sample.copy()
+
+    for n in range(n_epochs):
+
+        cost = 0
+        bit_array = [0] * epochs_per_sample.shape[0] # numba does not support bitarray, we use list instead
+
+        for i in range(epochs_per_sample.shape[0]):
+            if epoch_of_next_sample[i] <= n: # loss at 0 epoch because of this
+
+                j = head[i]
+                k = tail[i]
+
+                current = head_embedding[j]
+                other = tail_embedding[k]
+
+                dist_squared = rdist(current, other)
+
+                if dist_squared > 0.0:
+                    grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
+                    grad_coeff /= a * pow(dist_squared, b) + 1.0
+                    if bit_array[i] == 0: # if this edge has not been considered, add this to the cost
+                        c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
+                        cost -= math.log(c1)
+                else:
+                    grad_coeff = 0.0
+
+                for d in range(dim):
+                    grad_d = clip(grad_coeff * (current[d] - other[d]))
+                    current[d] += grad_d * alpha
+                    if move_other:
+                        other[d] += -grad_d * alpha
+
+                epoch_of_next_sample[i] += epochs_per_sample[i]
+
+                n_neg_samples = int(
+                    (n - epoch_of_next_negative_sample[i])
+                    / epochs_per_negative_sample[i]
+                )
+
+                for p in range(n_neg_samples):
+                    k = tau_rand_int(rng_state) % n_vertices
+
+                    other = tail_embedding[k]
+
+                    dist_squared = rdist(current, other)
+
+                    if dist_squared > 0.0:
+                        grad_coeff = 2.0 * gamma * b
+                        grad_coeff /= (0.001 + dist_squared) * (
+                            a * pow(dist_squared, b) + 1
+                        )
+                        if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
+                            c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
+                            cost += gamma * math.log(c2)
+                            if p == (n_neg_samples - 1):
+                                bit_array[i] = 1 # this edge will not be considered in this epoch anymore
+                    elif j == k:
+                        continue
+                    else:
+                        grad_coeff = 0.0
+
+                    for d in range(dim):
+                        if grad_coeff > 0.0:
+                            grad_d = clip(grad_coeff * (current[d] - other[d]))
+                        else:
+                            grad_d = 4.0
+                        current[d] += grad_d * alpha
+
+                epoch_of_next_negative_sample[i] += (
+                    n_neg_samples * epochs_per_negative_sample[i]
+                )
+
+        if n != 0:
+            sum_bit_array = 1e-4 # prevent 0 division
+            for l in range(len(bit_array)):
+                sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
+
+            # alpha = initial_alpha * (1.0 - (float(n) / float(n_epochs)))
+            alpha = initial_alpha - float(n) * 0.9 * 30 / float(n_epochs)
+            if alpha < 0.1:
+                alpha = 0.1
+
+            # if verbose and n % int(n_epochs / 10) == 0:
+            if verbose and n % 1 == 0:
+                print("\tcompleted ", n, " / ", n_epochs, "epochs, cost per sum_bit_array: ", cost / sum_bit_array,
+                    ", epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ", sum_bit_array: ", int(sum_bit_array))
+
+    return head_embedding
+
+
+@measure_time
 def simplicial_set_embedding(
     data,
     graph,
@@ -979,7 +1095,8 @@ def simplicial_set_embedding(
         if graph.shape[0] <= 10000:
             n_epochs = 500
         else:
-            n_epochs = 200
+            n_epochs = 30000
+            # n_epochs = 200
 
     graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
     graph.eliminate_zeros()
@@ -1028,7 +1145,7 @@ def simplicial_set_embedding(
     
     # optimize_start = ts()
     
-    embedding = optimize_layout(
+    embedding = optimize_layout2(
         embedding,
         embedding,
         head,

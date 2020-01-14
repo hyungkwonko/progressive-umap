@@ -1297,6 +1297,7 @@ def progressive_smooth_knn_dist2(
 
     return rhos, sigmas
 
+@measure_time
 @numba.njit(fastmath=True, parallel=True)
 def progressive_optimize_layout2(
     head_embedding,
@@ -1321,30 +1322,45 @@ def progressive_optimize_layout2(
     epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
+    # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
-    # epochs_per_sample[epochs_per_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
-    # epoch_of_next_sample[epoch_of_next_sample > 5 + n_epochs*0.01] = 5 + n_epochs*0.01
-    if n_epochs < total_epochs * 0.5:
-        epochs_per_sample[epochs_per_sample > 50 ] = 50
-        epoch_of_next_sample[epoch_of_next_sample > 50] = 50
+    if n_epochs < total_epochs * 0.05:
+        epochs_per_sample[epochs_per_sample > 100 ] = 100
+        epoch_of_next_sample[epoch_of_next_sample > 100] = 100
     else:
-        epochs_per_sample[epochs_per_sample > 30 ] = 30
-        epoch_of_next_sample[epoch_of_next_sample > 30] = 30
-        # epochs_per_sample[epochs_per_sample > epochs_per_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs)) ] = epochs_per_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs)) + 1
-        # epoch_of_next_sample[epoch_of_next_sample > epoch_of_next_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs))] = epoch_of_next_sample.max() * 1.0 - (float(n_epochs) / float(total_epochs)) + 5
+        epochs_per_sample[epochs_per_sample > 500 ] = 500
+        epoch_of_next_sample[epoch_of_next_sample > 500] = 500
+    run_epoch = int(np.ceil(epoch_of_next_sample.max()))
 
-    run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
+    # epochs_per_sample[epochs_per_sample > 50 + n_epochs] = 50 + n_epochs
+    # epoch_of_next_sample[epoch_of_next_sample > 50 + n_epochs] = 50 + n_epochs
+
+    # if (n_epochs >= total_epochs * 0.2) & (n_epochs < total_epochs * 0.7):
+    #     epochs_per_sample[epochs_per_sample > 800 ] = 800
+    #     epoch_of_next_sample[epoch_of_next_sample > 800] = 800
+    # elif n_epochs >= total_epochs * 0.8:
+    #     epochs_per_sample[epochs_per_sample > 200 ] = 200
+    #     epoch_of_next_sample[epoch_of_next_sample > 200] = 200
+
+    # ratio = epochs_per_sample.max() * (1.0 - float(n_epochs) / float(total_epochs))
+    # epochs_per_sample[epochs_per_sample > ratio ] = ratio + 1
+    # epoch_of_next_sample[epoch_of_next_sample > ratio] = ratio + 1
+    # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
     for n in range(run_epoch):
-        alpha = initial_alpha * 1.0 - (float(n_epochs) / float(total_epochs))
+        alpha = initial_alpha - float(n_epochs) * 0.9 * 30 / float(total_epochs)
+        if alpha < 0.1:
+            alpha = 0.1
+        # alpha = initial_alpha * (1.0 - float(n_epochs) / float(total_epochs))
 
         if n_epochs >= total_epochs:
             break
 
-        # cost = 0
+        cost = 0
+        bit_array = [0] * epochs_per_sample.shape[0] # numba does not support bitarray, we use list instead
 
         for i in range(epochs_per_sample.shape[0]):
-            if epoch_of_next_sample[i] <= n:
+            if epoch_of_next_sample[i] <= n: # loss at 0 epoch because of this
 
                 j = head[i] # first index
                 k = tail[i] # second index
@@ -1357,8 +1373,9 @@ def progressive_optimize_layout2(
                 if dist_squared > 0.0: # if they are not the same pts
                     grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
                     grad_coeff /= a * pow(dist_squared, b) + 1.0
-                    # c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
-                    # cost -= math.log(c1)
+                    if bit_array[i] == 0: # if this edge has not been considered, add this to the cost
+                        c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
+                        cost -= math.log(c1)
                 else:
                     grad_coeff = 0.0
 
@@ -1385,9 +1402,11 @@ def progressive_optimize_layout2(
                     if dist_squared > 0.0:
                         grad_coeff = 2.0 * gamma * b
                         grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
-                        # c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
-                        # cost -= gamma * math.log(c2)
-
+                        if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
+                            c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
+                            cost += gamma * math.log(c2)
+                            if p == (n_neg_samples - 1):
+                                bit_array[i] = 1 # this edge will not be considered in this epoch anymore
                     elif j == k:
                         continue
                     else:
@@ -1403,12 +1422,19 @@ def progressive_optimize_layout2(
                 epoch_of_next_negative_sample[i] += (
                     n_neg_samples * epochs_per_negative_sample[i]
                 )
+
+        if n != 0:
+            sum_bit_array = 1e-4 # prevent 0 division
+            for l in range(len(bit_array)):
+                sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
+
+            if verbose and (n % 50 == 0 or n % 50 == 1):
+                print("\tcompleted ", n_epochs, " / ", total_epochs, "epochs\t, cost/sum_bit_array: ", cost / sum_bit_array,
+                    ",\t epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ",\t sum_bit_array: ", int(sum_bit_array))
         n_epochs += 1
 
-        if verbose and n % int(n_epochs / 10) == 0:
-            print("\tcompleted ", n, " / ", n_epochs, "epochs")
+    # return head_embedding, n_epochs
     return head_embedding, n_epochs
-    # return head_embedding, n_epochs, cost
 
 
 
@@ -2069,6 +2095,7 @@ class UMAP(BaseEstimator):
         -------
         None
         '''
+        start = ts()
 
         # check array: the input is checked to be a non-empty 2D array containing only finite values.
         X = check_array(X, dtype=np.float32, accept_sparse="csr")
@@ -2159,14 +2186,14 @@ class UMAP(BaseEstimator):
 
         # For smaller datasets we can use more epochs
         if self.N <= 10000:
-            self.total_epochs = 500
+            self.total_epochs = 1000
         else:
-            self.total_epochs = 500
+            self.total_epochs = 30000
 
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         # ops = 300
-        ops = 300
+        ops = 5000
         self.epochs = 0
 
         _, yy = load_mnist('data/fashion', kind='train')
@@ -2186,7 +2213,7 @@ class UMAP(BaseEstimator):
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
                 self.graph_ = adj_matrix
-                print("adj matrix return success!")
+                # print("adj matrix return success!")
                 print("size: ", self.table.size())
                 # print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
             
@@ -2246,6 +2273,7 @@ class UMAP(BaseEstimator):
                 a=self._a,
                 b=self._b,
                 rng_state=rng_state,
+                verbose=True
             )
 
             self.epochs = eps
@@ -2253,19 +2281,23 @@ class UMAP(BaseEstimator):
             # normalize embedding (Y) (DO WE HAVE TO ??)
             # csr_graph = normalize(graph.tocsr(), norm="l1")
 
-            # fig, ax = plt.subplots(1, figsize=(14, 10))
-            # plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
-            # plt.setp(ax, xticks=[], yticks=[])
-            # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-            # cbar.set_ticks(np.arange(10))
-            # cbar.set_ticklabels(item)
-            # # plt.title('Fashion MNIST Embedded')
-            # plt.savefig(f"./test_img/{self.epochs}.png")
+            fig, ax = plt.subplots(1, figsize=(14, 10))
+            plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
+            plt.setp(ax, xticks=[], yticks=[])
+            plt.ylim(-12.0, +12.0)
+            plt.xlim(-12.0, +12.0)
+            cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+            cbar.set_ticks(np.arange(10))
+            cbar.set_ticklabels(item)
+            # plt.title('Fashion MNIST Embedded')
+            plt.savefig(f"./test_img/{self.epochs}.png")
 
             self.Y[:self.table.size()] = embedding
 
+            print(f"eps: {eps}, time taken: {ts() - start}")
+
             # print(embedding)
-            print(f"current epochs: {self.epochs}, cost: {cost}")
+            # print(f"current epochs: {self.epochs}, cost: {cost/self.graph_.shape[0]}, shape: {self.graph_.shape}")
 
 
         self._input_hash = joblib.hash(self._raw_data)
