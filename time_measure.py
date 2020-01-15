@@ -107,19 +107,19 @@ def draw_plot(x, y, item, filename):
     # plt.title('Fashion MNIST Embedded')
     plt.savefig(f"./{filename}.png")
 
-def run_umap(x, y, item, n_neighbors_list, min_dist=0.05, metric="euclidean", verbose=True):
-    for i in n_neighbors_list:
-        print("UMAP NEIGHBOR NUMBER: ", i)
-        x_umap = umap.UMAP(n_neighbors=i, min_dist=min_dist, metric=metric, verbose=verbose).fit_transform(x)
-        filename = "umap_result" + str(i) + "neighbors"
-        draw_plot(x_umap, y, item, filename)
+# def run_umap(x, y, item, n_neighbors_list, min_dist=0.05, metric="euclidean", verbose=True):
+#     for i in n_neighbors_list:
+#         print("UMAP NEIGHBOR NUMBER: ", i)
+#         x_umap = umap.UMAP(n_neighbors=i, min_dist=min_dist, metric=metric, verbose=verbose).fit_transform(x)
+#         filename = "umap_result" + str(i) + "neighbors"
+#         draw_plot(x_umap, y, item, filename)
 
-def run_umap2(x, y, item, min_dist_list=[0.1,0.05,0.01], verbose=True):
-    for i in min_dist_list:
-        print("MIN DIST LIST: ", i)
-        x_umap = umap.UMAP(min_dist=i, verbose=verbose).fit_transform(x)
-        filename = "umap_result" + str(i) + "mindist"
-        draw_plot(x_umap, y, item, filename)
+# def run_umap2(x, y, item, min_dist_list=[0.1,0.05,0.01], verbose=True):
+#     for i in min_dist_list:
+#         print("MIN DIST LIST: ", i)
+#         x_umap = umap.UMAP(min_dist=i, verbose=verbose).fit_transform(x)
+#         filename = "umap_result" + str(i) + "mindist"
+#         draw_plot(x_umap, y, item, filename)
 
 
 if __name__ == "__main__":
@@ -139,7 +139,8 @@ if __name__ == "__main__":
     item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
     # UMAP run
-    umap.UMAP(n_neighbors=5).fit_transform(X=x, y=y, item=item)
+    # umap.UMAP(n_neighbors=5).fit_transform(X=x, y=y, item=item)
+    umap.UMAP(n_neighbors=5).fit_transform(X=x, y=None, label=y, item=item)
     # run_umap(x=x, y=y, item=item, n_neighbors_list=[5])
 
 

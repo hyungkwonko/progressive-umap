@@ -43,7 +43,6 @@ import locale
 from pynene import KNNTable
 import math
 
-from time_measure import load_mnist
 from matplotlib import pyplot as plt
 
 locale.setlocale(locale.LC_NUMERIC, "C")
@@ -1323,8 +1322,8 @@ def progressive_optimize_layout2(
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
     # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
-    epochs_per_sample[epochs_per_sample > 5 ] = 5
-    epoch_of_next_sample[epoch_of_next_sample > 5] = 5
+    epochs_per_sample[epochs_per_sample > 4 ] = 4
+    epoch_of_next_sample[epoch_of_next_sample > 4] = 4
 
     # if n_epochs < total_epochs * 0.05:
     #     epochs_per_sample[epochs_per_sample > 5 ] = 5
@@ -1350,7 +1349,7 @@ def progressive_optimize_layout2(
     # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
     for n in range(run_epoch):
-        alpha = initial_alpha - float(n_epochs) * 0.9 * 30 / float(total_epochs)
+        alpha = initial_alpha - float(n_epochs) * 0.9 * 100 / float(total_epochs)
         if alpha < 0.1:
             alpha = 0.1
         # alpha = initial_alpha * (1.0 - float(n_epochs) / float(total_epochs))
@@ -2214,10 +2213,11 @@ class UMAP(BaseEstimator):
                 adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="random")
                 self.graph_ = adj_matrix
                 if self.epochs == 0:
-                    print(f"Finished initialization: {ts() - start}")
+                    init_time = ts() - start
+                    print(f"Finished initialization: {init_time}")
                     with open(f'./result/log_fashion.txt', 'a') as log:
                         log.write(f"size\tself.epochs\ttime_taken\tcost\n")
-                        log.write(f"{self.table.size()}\t{self.epochs}\t{ts() - start}\t{0}\n")
+                        log.write(f"{self.table.size()}\t{self.epochs}\t{init_time}\t{0}\n")
             
             ######################
             # Embedding
@@ -2283,8 +2283,6 @@ class UMAP(BaseEstimator):
             # normalize embedding (Y) (DO WE HAVE TO ??)
             # csr_graph = normalize(graph.tocsr(), norm="l1")
 
-
-
             self.Y[:self.table.size()] = embedding
 
             print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
@@ -2302,7 +2300,7 @@ class UMAP(BaseEstimator):
                 cbar.set_ticks(np.arange(10))
                 cbar.set_ticklabels(_item)
                 # plt.title('Fashion MNIST Embedded')
-                plt.savefig(f"./result/test_img/{self.epochs}.png")
+                plt.savefig(f"./result/{self.epochs}.png")
 
                 save_eps += save_eps_term
 
