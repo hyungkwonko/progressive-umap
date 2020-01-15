@@ -1297,7 +1297,7 @@ def progressive_smooth_knn_dist2(
 
     return rhos, sigmas
 
-@measure_time
+# @measure_time
 @numba.njit(fastmath=True, parallel=True)
 def progressive_optimize_layout2(
     head_embedding,
@@ -1323,13 +1323,15 @@ def progressive_optimize_layout2(
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
     # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
+    epochs_per_sample[epochs_per_sample > 5 ] = 5
+    epoch_of_next_sample[epoch_of_next_sample > 5] = 5
 
-    if n_epochs < total_epochs * 0.05:
-        epochs_per_sample[epochs_per_sample > 100 ] = 100
-        epoch_of_next_sample[epoch_of_next_sample > 100] = 100
-    else:
-        epochs_per_sample[epochs_per_sample > 500 ] = 500
-        epoch_of_next_sample[epoch_of_next_sample > 500] = 500
+    # if n_epochs < total_epochs * 0.05:
+    #     epochs_per_sample[epochs_per_sample > 5 ] = 5
+    #     epoch_of_next_sample[epoch_of_next_sample > 5] = 5
+    # else:
+    #     epochs_per_sample[epochs_per_sample > 10 ] = 10
+    #     epoch_of_next_sample[epoch_of_next_sample > 10] = 10
     run_epoch = int(np.ceil(epoch_of_next_sample.max()))
 
     # epochs_per_sample[epochs_per_sample > 50 + n_epochs] = 50 + n_epochs
@@ -1428,13 +1430,13 @@ def progressive_optimize_layout2(
             for l in range(len(bit_array)):
                 sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
 
-            if verbose and (n % 50 == 0 or n % 50 == 1):
-                print("\tcompleted ", n_epochs, " / ", total_epochs, "epochs\t, cost/sum_bit_array: ", cost / sum_bit_array,
-                    ",\t epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ",\t sum_bit_array: ", int(sum_bit_array))
+            # if verbose and n % 50 == 0:
+            #     print("\tcompleted ", n_epochs, " / ", total_epochs, "epochs\t, cost/sum_bit_array: ", cost / sum_bit_array,
+            #         ",\t epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ",\t sum_bit_array: ", int(sum_bit_array))
         n_epochs += 1
 
     # return head_embedding, n_epochs
-    return head_embedding, n_epochs
+    return head_embedding, n_epochs, cost / sum_bit_array
 
 
 
@@ -2188,12 +2190,12 @@ class UMAP(BaseEstimator):
         if self.N <= 10000:
             self.total_epochs = 1000
         else:
-            self.total_epochs = 30000
+            self.total_epochs = 20000
 
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         # ops = 300
-        ops = 5000
+        ops = 1000
         self.epochs = 0
 
         _, yy = load_mnist('data/fashion', kind='train')
@@ -2201,6 +2203,9 @@ class UMAP(BaseEstimator):
         yy = np.append(yy, yy_test, axis=0)
         # x = pca(x, no_dims=300).real
         item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
+
+        save_eps = 0
+        save_eps_term = 100
 
         # run iteration (work progressively)
         # for _ in range(self.total_epochs):
@@ -2211,11 +2216,13 @@ class UMAP(BaseEstimator):
 
             if(self.table.size() < self.N):
                 # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="neighbor")
+                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="random")
                 self.graph_ = adj_matrix
-                # print("adj matrix return success!")
-                print("size: ", self.table.size())
-                # print(f"self.graph_.data.shape:  {self.graph_.data.shape}")
+                if self.epochs == 0:
+                    print(f"Finished initialization: {ts() - start}")
+                    with open(f'./result/log_fashion.txt', 'a') as log:
+                        log.write(f"size\tself.epochs\ttime_taken\tcost\n")
+                        log.write(f"{self.table.size()}\t{self.epochs}\t{ts() - start}\t{0}\n")
             
             ######################
             # Embedding
@@ -2261,7 +2268,7 @@ class UMAP(BaseEstimator):
 
             rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
 
-            embedding, eps = progressive_optimize_layout2(
+            embedding, eps, cost = progressive_optimize_layout2(
                 head_embedding=self.Y[:self.table.size()],
                 tail_embedding=self.Y[:self.table.size()],
                 head=head,
@@ -2281,20 +2288,28 @@ class UMAP(BaseEstimator):
             # normalize embedding (Y) (DO WE HAVE TO ??)
             # csr_graph = normalize(graph.tocsr(), norm="l1")
 
-            fig, ax = plt.subplots(1, figsize=(14, 10))
-            plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
-            plt.setp(ax, xticks=[], yticks=[])
-            plt.ylim(-12.0, +12.0)
-            plt.xlim(-12.0, +12.0)
-            cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-            cbar.set_ticks(np.arange(10))
-            cbar.set_ticklabels(item)
-            # plt.title('Fashion MNIST Embedded')
-            plt.savefig(f"./test_img/{self.epochs}.png")
+
 
             self.Y[:self.table.size()] = embedding
 
-            print(f"eps: {eps}, time taken: {ts() - start}")
+            print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
+
+            with open(f'./result/log_fashion.txt', 'a') as log:
+                log.write(f"{self.table.size()}\t{self.epochs}\t{ts() - start}\t{cost}\n")
+
+            if self.epochs >= save_eps:
+                fig, ax = plt.subplots(1, figsize=(14, 10))
+                plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
+                plt.setp(ax, xticks=[], yticks=[])
+                plt.ylim(-12.0, +12.0)
+                plt.xlim(-12.0, +12.0)
+                cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+                cbar.set_ticks(np.arange(10))
+                cbar.set_ticklabels(item)
+                # plt.title('Fashion MNIST Embedded')
+                plt.savefig(f"./result/test_img/{self.epochs}.png")
+
+                save_eps += save_eps_term
 
             # print(embedding)
             # print(f"current epochs: {self.epochs}, cost: {cost/self.graph_.shape[0]}, shape: {self.graph_.shape}")

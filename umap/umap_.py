@@ -1095,7 +1095,7 @@ def simplicial_set_embedding(
         if graph.shape[0] <= 10000:
             n_epochs = 500
         else:
-            n_epochs = 30000
+            n_epochs = 20000
             # n_epochs = 200
 
     graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
