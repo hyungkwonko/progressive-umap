@@ -378,8 +378,7 @@ def fuzzy_simplicial_set(
     angular=False,
     set_op_mix_ratio=1.0,
     local_connectivity=1.0,
-    verbose=False,
-):
+    verbose=False,):
     """Given a set of data X, a neighborhood size, and a measure of distance
     compute the fuzzy simplicial set (here represented as a fuzzy graph in
     the form of a sparse matrix) associated to the data. This is done by
@@ -603,8 +602,7 @@ def reset_local_connectivity(simplicial_set):
 
 
 def categorical_simplicial_set_intersection(
-    simplicial_set, target, unknown_dist=1.0, far_dist=5.0
-):
+    simplicial_set, target, unknown_dist=1.0, far_dist=5.0):
     """Combine a fuzzy simplicial set with another fuzzy simplicial set
     generated from categorical data using categorical distances. The target
     data is assumed to be categorical label data (a vector of labels),
@@ -749,8 +747,7 @@ def optimize_layout(
     gamma=1.0,
     initial_alpha=1.0,
     negative_sample_rate=5.0,
-    verbose=False,
-):
+    verbose=False,):
     """Improve an embedding using stochastic gradient descent to minimize the
     fuzzy set cross entropy between the 1-skeletons of the high dimensional
     and low dimensional fuzzy simplicial sets. In practice this is done by
@@ -1016,8 +1013,7 @@ def simplicial_set_embedding(
     random_state,
     metric,
     metric_kwds,
-    verbose,
-):
+    verbose,):
     """Perform a fuzzy simplicial set embedding, using a specified
     initialisation method and then minimizing the fuzzy set cross entropy
     between the 1-skeletons of the high and low dimensional fuzzy simplicial

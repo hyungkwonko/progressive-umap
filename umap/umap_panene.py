@@ -43,7 +43,7 @@ import locale
 from pynene import KNNTable
 import math
 
-from time_measure import draw_plot, load_mnist
+from time_measure import load_mnist
 from matplotlib import pyplot as plt
 
 locale.setlocale(locale.LC_NUMERIC, "C")
@@ -2064,7 +2064,7 @@ class UMAP(BaseEstimator):
         return result # return COO matrix
 
 
-    def run(self, X, y=None):
+    def run(self, _X, _y, _item):
         '''
         RUN 
         ----------
@@ -2097,11 +2097,12 @@ class UMAP(BaseEstimator):
         -------
         None
         '''
+
         start = ts()
 
         # check array: the input is checked to be a non-empty 2D array containing only finite values.
-        X = check_array(X, dtype=np.float32, accept_sparse="csr")
-        self._raw_data = X
+        _X = check_array(_X, dtype=np.float32, accept_sparse="csr")
+        self._raw_data = _X
 
         # Handle all the optional arguments, setting default
         if self.a is None or self.b is None:
@@ -2134,8 +2135,8 @@ class UMAP(BaseEstimator):
             print(str(self))
             
         # Error check n_neighbors based on data size
-        if X.shape[0] <= self.n_neighbors:
-            if X.shape[0] == 1:
+        if _X.shape[0] <= self.n_neighbors:
+            if _X.shape[0] == 1:
                 self.embedding_ = np.zeros(
                     (1, self.n_components)
                 )  # needed to sklearn comparability
@@ -2143,15 +2144,15 @@ class UMAP(BaseEstimator):
 
             warn(
                 "n_neighbors is larger than the dataset size; truncating to "
-                "X.shape[0] - 1"
+                "_X.shape[0] - 1"
             )
-            self._n_neighbors = X.shape[0] - 1
+            self._n_neighbors = _X.shape[0] - 1
         else:
             self._n_neighbors = self.n_neighbors
 
-        if scipy.sparse.isspmatrix_csr(X):
-            if not X.has_sorted_indices:
-                X.sort_indices()
+        if scipy.sparse.isspmatrix_csr(_X):
+            if not _X.has_sorted_indices:
+                _X.sort_indices()
             self._sparse_data = True
         else:
             self._sparse_data = False
@@ -2159,7 +2160,7 @@ class UMAP(BaseEstimator):
         # Set random seed
         self.random_state = check_random_state(self.random_state)
 
-        self.N = X.shape[0]
+        self.N = _X.shape[0]
 
         # initialize table & neighbors & distances
         self.indexes = np.zeros((self.N, self.n_neighbors), dtype=np.int64) # with np.in32, it is not optimized
@@ -2173,7 +2174,7 @@ class UMAP(BaseEstimator):
         self.Y = np.array(self.random_state.uniform(
             low=-10.0, high=10.0, size=(self.N, self.n_components)
         ).astype(np.float32))
-        self.table = KNNTable(X, self.n_neighbors, self.indexes, self.distances)
+        self.table = KNNTable(_X, self.n_neighbors, self.indexes, self.distances)
 
         # initialize elements of COO matrix
         self.rows = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
@@ -2195,14 +2196,8 @@ class UMAP(BaseEstimator):
         # self.min_dist = min_dist
         # self.local_connectivity = local_connectivity
         # ops = 300
-        ops = 1000
+        ops = 500
         self.epochs = 0
-
-        _, yy = load_mnist('data/fashion', kind='train')
-        _, yy_test = load_mnist('data/fashion', kind='t10k')
-        yy = np.append(yy, yy_test, axis=0)
-        # x = pca(x, no_dims=300).real
-        item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
         save_eps = 0
         save_eps_term = 100
@@ -2299,13 +2294,13 @@ class UMAP(BaseEstimator):
 
             if self.epochs >= save_eps:
                 fig, ax = plt.subplots(1, figsize=(14, 10))
-                plt.scatter(*embedding.T, s=0.3, c=yy[:self.table.size()], cmap='Spectral', alpha=1.0)
+                plt.scatter(*embedding.T, s=0.3, c=_y[:self.table.size()], cmap='Spectral', alpha=1.0)
                 plt.setp(ax, xticks=[], yticks=[])
                 plt.ylim(-12.0, +12.0)
                 plt.xlim(-12.0, +12.0)
                 cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
                 cbar.set_ticks(np.arange(10))
-                cbar.set_ticklabels(item)
+                cbar.set_ticklabels(_item)
                 # plt.title('Fashion MNIST Embedded')
                 plt.savefig(f"./result/test_img/{self.epochs}.png")
 
@@ -2321,7 +2316,7 @@ class UMAP(BaseEstimator):
 
 
     @measure_time
-    def fit_transform(self, X, y=None):
+    def fit_transform(self, X, y, item):
         """Fit X into an embedded space and return that transformed
         output.
 
@@ -2342,7 +2337,7 @@ class UMAP(BaseEstimator):
         X_new : array, shape (n_samples, n_components)
             Embedding of the training data in low-dimensional space.
         """
-        self.run(X, y)
+        self.run(X, y, item)
         return self.Y[:self.table.size()]
         # return self.Y
 
