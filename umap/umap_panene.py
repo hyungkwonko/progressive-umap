@@ -1113,74 +1113,8 @@ def evaluate_error(similarities, Y, N, D, theta, ee_factor):
     '''
     return 0
 
-
 @numba.njit(fastmath=True)
-def progressive_compute_membership_strengths2(
-    updatedIds,
-    indexes,
-    distances,
-    rhos,
-    sigmas,
-    n_neighbors,
-    rows,
-    cols,
-    vals,):
-    """For selected indexes, construct the membership strength data for the 1-skeleton
-    of each local fuzzy simplicial set -- this is formed as a sparse matrix where each
-    row is a local fuzzy simplicial set, with a membership strength for the 1-simplex
-    to each other data point.
-
-    Parameters
-    ----------
-    updatedIds: list
-        indexes that need to be updated
-
-    Returns
-    -------
-    rows: array of shape (n_samples * n_neighbors)
-        Row data for the resulting sparse matrix (coo format)
-
-    cols: array of shape (n_samples * n_neighbors)
-        Column data for the resulting sparse matrix (coo format)
-
-    vals: array of shape (n_samples * n_neighbors)
-        Entries for the resulting sparse matrix (coo format)
-    """
-
-    for Aid in updatedIds: # point A
-        # the neighbors of Aid has been updated
-        for Bid in (indexes[Aid]): # point B
-
-            # index of B (e.g., indexes: [0 3 9 2 1] -> ix: [0 1 2 3 4])
-            ix = -1
-            for i in range(n_neighbors):
-                if indexes[Aid][i] == Bid:
-                    ix = i
-
-            if ix == -1:
-                raise ValueError("Error retrieving ix value")
-            
-            # if(len(ix) < 1):
-            #     raise ValueError("We didn't get the full knn for i")
-            # ix = ix[0]
-
-            if indexes[Aid, ix] == Aid:
-                val = 0.0
-            elif distances[Aid, ix] - rhos[Aid] <= 0.0:
-                val = 1.0
-            else:
-                val = np.exp(-((distances[Aid, ix] - rhos[Aid]) / (sigmas[Aid])))
-
-            rows[Aid * n_neighbors + ix] = Aid
-            cols[Aid * n_neighbors + ix] = Bid # indexes[Aid, ix]
-            vals[Aid * n_neighbors + ix] = val # sum of the vals = log2(k)*bandwidth
-
-            # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
-
-    return rows, cols, vals
-
-@numba.njit(fastmath=True)
-def progressive_smooth_knn_dist2(
+def progressive_smooth_knn_dist(
     updatedIds,
     k,
     n_iter,
@@ -1198,10 +1132,6 @@ def progressive_smooth_knn_dist2(
 
     Parameters
     ----------
-    distances: array of shape (n_samples, n_neighbors)
-        Distances to nearest neighbors for each samples. Each row should be a
-        sorted list of distances to a given samples nearest neighbors.
-    
     updatedIds: list
         Indexes we are goint to update getting sigmas and rhos
 
@@ -1223,13 +1153,20 @@ def progressive_smooth_knn_dist2(
         The target bandwidth of the kernel, larger values will produce
         larger return values.
 
+    distances: array of shape (n_samples, n_neighbors)
+        Distances to nearest neighbors for each samples. Each row should be a
+        sorted list of distances to a given samples nearest neighbors.
+        
+    table_size: integer
+        current table size
+    
     Returns
     -------
-    result: array of shape(n_samples)
-        The normalization factor derived from the metric tensor approximation.
-
-    rho: array of shape(n_samples)
+    rhos: array of shape(n_samples)
         The local connectivity adjustment.
+
+    sigmas: array of shape(n_samples)
+        The normalization factor derived from the metric tensor approximation.
     """
     target = np.log2(k) * bandwidth # 2.3192...
 
@@ -1296,9 +1233,72 @@ def progressive_smooth_knn_dist2(
 
     return rhos, sigmas
 
+
+@numba.njit(fastmath=True)
+def progressive_compute_membership_strengths(
+    updatedIds,
+    indexes,
+    distances,
+    rhos,
+    sigmas,
+    n_neighbors,
+    rows,
+    cols,
+    vals,):
+    """For selected indexes, construct the membership strength data for the 1-skeleton
+    of each local fuzzy simplicial set -- this is formed as a sparse matrix where each
+    row is a local fuzzy simplicial set, with a membership strength for the 1-simplex
+    to each other data point.
+
+    Parameters
+    ----------
+    updatedIds: list
+        indexes that need to be updated
+
+    Returns
+    -------
+    rows: array of shape (n_samples * n_neighbors)
+        Row data for the resulting sparse matrix (coo format)
+
+    cols: array of shape (n_samples * n_neighbors)
+        Column data for the resulting sparse matrix (coo format)
+
+    vals: array of shape (n_samples * n_neighbors)
+        Entries for the resulting sparse matrix (coo format)
+    """
+
+    for Aid in updatedIds: # point A
+        # the neighbors of Aid has been updated
+        for Bid in (indexes[Aid]): # point B
+
+            # index of B (e.g., indexes: [0 3 9 2 1] -> ix: [0 1 2 3 4])
+            ix = -1
+            for i in range(n_neighbors):
+                if indexes[Aid][i] == Bid:
+                    ix = i
+                    break
+            if ix == -1:
+                raise ValueError("Error retrieving ix value")
+            
+            if indexes[Aid, ix] == Aid:
+                val = 0.0
+            elif distances[Aid, ix] - rhos[Aid] <= 0.0:
+                val = 1.0
+            else:
+                val = np.exp(-((distances[Aid, ix] - rhos[Aid]) / (sigmas[Aid])))
+
+            rows[Aid * n_neighbors + ix] = Aid
+            cols[Aid * n_neighbors + ix] = Bid # indexes[Aid, ix]
+            vals[Aid * n_neighbors + ix] = val # sum of the vals = log2(k)*bandwidth
+
+            # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
+
+    return rows, cols, vals
+
+
 # @measure_time
 @numba.njit(fastmath=True, parallel=True)
-def progressive_optimize_layout2(
+def progressive_optimize_layout(
     head_embedding,
     tail_embedding,
     head,
@@ -1322,8 +1322,8 @@ def progressive_optimize_layout2(
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
     # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
-    epochs_per_sample[epochs_per_sample > 4 ] = 4
-    epoch_of_next_sample[epoch_of_next_sample > 4] = 4
+    epochs_per_sample[epochs_per_sample > 20 ] = 20
+    epoch_of_next_sample[epoch_of_next_sample > 20] = 20
 
     # if n_epochs < total_epochs * 0.05:
     #     epochs_per_sample[epochs_per_sample > 5 ] = 5
@@ -1349,7 +1349,7 @@ def progressive_optimize_layout2(
     # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
 
     for n in range(run_epoch):
-        alpha = initial_alpha - float(n_epochs) * 0.9 * 100 / float(total_epochs)
+        alpha = initial_alpha - float(n_epochs) * 0.9 * 10 / float(total_epochs)
         if alpha < 0.1:
             alpha = 0.1
         # alpha = initial_alpha * (1.0 - float(n_epochs) / float(total_epochs))
@@ -1955,37 +1955,29 @@ class UMAP(BaseEstimator):
 
 
     # PANENE IMPLEMENTATION
-    # def update_similarity(table, neighbors, similarities, Y, self.n_components, perplexity=10, K, ops, ee_factor=1):
     def update_similarity(self, ops, set_op_mix_ratio, init):
         '''
         UPDATE_SIMILARITY 
         ----------
-        1. update KNN Table (i.e., table->run(ops))
+        1. update KNN Table (i.e., table.run(ops))
         -) compute val_P for points 
             1) newly inserted (ar.addPointResult, # = table.getSize() - ar.addPointResult)
             2) updated (=dirty points, ar.updatePointResult)
         2. collect all ids: 1) & 2) => ar.updatedIds
         3. set initial positions of newly added points (ar.updatePointResult)
-            - locate them based on the mean value of their neighbors
-            - another method ?
+            - if epochs == 0, 
+            - if epochs > 0, locate them based on the mean value of their neighbors
         4. update perplexities for points in 1) & 2) => ar.updatedIds
         5. make the adjacency matrix symmetric
 
         Parameters
         ----------
-        table: KNNTable
-        neighbors: (n, k = number of neighbors) neighbor distance 2d array
-        similarities: (n, n) adjacency matrix (2d array) to be optimized
-        Y: (n * output_dimension) array
-        self.n_components: output dimension
-        perplexity: a perplexity value (e.g., 2.51)
-        K: number of neighbors (?)
         ops: number of ops
-        ee_factor: early exaggeration factor
+        set_op_mix_ratio: 
 
         Returns
         -------
-        None
+        result: COO formatted adjacency matrix
         '''
 
         # run for given number of ops
@@ -1998,15 +1990,11 @@ class UMAP(BaseEstimator):
             # append newly inserted points
             updatedIds.append(i)
 
-            # overwrite random values with 0
-            for j in range(self.n_components):
-               self.Y[i][j] = 0
-
-            # NEED FIX (IT IS NO REQUIRED)
-            if init == "random":
+            if self.epochs > 0:
+                # overwrite random values with 0
                 for j in range(self.n_components):
-                    self.Y[i][j] = self.random_state.random() # random value between 0 and 1
-            elif init == "neighbor":
+                    self.Y[i][j] = 0
+
                 # set their initial points to the mean of its neighbors
                 for k in range(1, self.n_neighbors):
                     for j in range(self.n_components):
@@ -2018,32 +2006,43 @@ class UMAP(BaseEstimator):
                     self.Y[self.table.size()-updates['addPointResult']:self.table.size()] += self.random_state.normal(
                         scale=0.001 * nndist, size=[updates['addPointResult'], self.n_components] # 0.001? 0.0001?
                     ).astype(np.float32)
-            else:
-                raise ValueError("Please check init value for embedding")
 
         # for i in updatedIds:
-        #     print("i: {}, index: {}, distance: {}".format(i, self.indexes[i], self.distances[i]))
+        #     print(f"i: {i}, index: {self.indexes[i]}, distance: {self.distances[i]}, Y[i]: {self.Y[i]}")
 
-        # compute sigmas and rhos for dirty & newly inserted points
         '''
         EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
         '''
-        # self.progressive_smooth_knn_dist(updatedIds, self.n_neighbors, n_iter=200,
-        #     local_connectivity=1.0, bandwidth=1.0)
-        self.rhos, self.sigmas = progressive_smooth_knn_dist2(updatedIds, self.n_neighbors, 64, 1.0, 1.0,
-            self.distances, self.table.size(), self.rhos, self.sigmas,)
+        # compute sigmas and rhos for dirty & newly inserted points
+        self.rhos, self.sigmas = progressive_smooth_knn_dist(
+            updatedIds,
+            self.n_neighbors,
+            64, # number of maximum iterations
+            self.local_connectivity,
+            1.0, # bandwidth
+            self.distances,
+            self.table.size(),
+            self.rhos,
+            self.sigmas,)
 
-        # print("sigmas: {}, rhos: {}".format(self.sigmas[:20], self.rhos[:20]))
+        # print(f"sigmas: {self.sigmas[:self.table.size()]}, rhos: {self.rhos[:self.table.size()]}")
 
         # progressive_compute_membership_strengths
-        # self.progressive_compute_membership_strengths(updatedIds) # without numba
-        self.rows, self.cols, self.vals = progressive_compute_membership_strengths2(updatedIds,
-            self.indexes, self.distances, self.rhos, self.sigmas, self.n_neighbors, self.rows,
-            self.cols, self.vals)
+        self.rows, self.cols, self.vals = progressive_compute_membership_strengths(
+            updatedIds,
+            self.indexes,
+            self.distances,
+            self.rhos,
+            self.sigmas,
+            self.n_neighbors,
+            self.rows,
+            self.cols,
+            self.vals,)
 
+        # COO matrix
         result = scipy.sparse.coo_matrix(
             (self.vals, (self.rows, self.cols)), shape=(self.table.size(), self.table.size())
-        ) # COO matrix
+        )
         result.eliminate_zeros()
 
         transpose = result.transpose()
@@ -2140,7 +2139,6 @@ class UMAP(BaseEstimator):
                     (1, self.n_components)
                 )  # needed to sklearn comparability
                 return self
-
             warn(
                 "n_neighbors is larger than the dataset size; truncating to "
                 "_X.shape[0] - 1"
@@ -2173,6 +2171,7 @@ class UMAP(BaseEstimator):
         self.Y = np.array(self.random_state.uniform(
             low=-10.0, high=10.0, size=(self.N, self.n_components)
         ).astype(np.float32))
+
         self.table = KNNTable(_X, self.n_neighbors, self.indexes, self.distances)
 
         # initialize elements of COO matrix
@@ -2180,35 +2179,22 @@ class UMAP(BaseEstimator):
         self.cols = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
         self.vals = np.zeros((self.N * self.n_neighbors), dtype=np.float32)
 
-        # initializing embedding position (pseudo values for test)
-        self._a, self._b = find_ab_params(self.spread, self.min_dist)
-        self._metric_kwds = {}
-        self.remainder = np.array([])
-        self.condition = "sampling"
-
         # For smaller datasets we can use more epochs
         if self.N <= 10000:
             self.total_epochs = 1000
         else:
-            self.total_epochs = 20000
+            self.total_epochs = 4000
 
-        # self.min_dist = min_dist
-        # self.local_connectivity = local_connectivity
-        # ops = 300
-        ops = 500
         self.epochs = 0
-
-        save_eps = 0
-        save_eps_term = 100
+        save_eps = 100
 
         # run iteration (work progressively)
-        # for _ in range(self.total_epochs):
         while self.epochs < self.total_epochs:
 
-            # if iter == 4:
-            #     exit()
-
             if(self.table.size() < self.N):
+
+                ops = 5000 if self.epochs == 0 else 300
+
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="random")
                 self.graph_ = adj_matrix
@@ -2219,51 +2205,42 @@ class UMAP(BaseEstimator):
                         log.write(f"size\tself.epochs\ttime_taken\tcost\n")
                         log.write(f"{self.table.size()}\t{self.epochs}\t{init_time}\t{0}\n")
             
-            ######################
-            # Embedding
-            ######################
-
-            # Set initial position (DONE)
-
-            # Compute gradient
-
-            # update gains
-
-            # perform gradient update
-            
-            # print out progress
-            
-            # THE END
-
-            # embedding = self.progressive_optimize_layout(
-            #     head_embedding=self.Y[:self.table.size()],
-            #     tail_embedding=self.Y[:self.table.size()],
-            #     graph=self.graph_,
-            #     # n_epochs=self.epochs,
-            #     a=self._a,
-            #     b=self._b,
-            #     random_state=self.random_state,
-            # )
-
-
             self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
             self.graph_.sum_duplicates()
+
             # remove values smaller than the threshold (e.g., 1 / 200)
             self.graph_.data[self.graph_.data < (self.graph_.data.max() / float(self.total_epochs))] = 0.0
             self.graph_.eliminate_zeros()
 
-            # head: array of shape (n_1_simplices)
-            #     The indices of the heads of 1-simplices with non-zero membership.
+            # head: The indices of the heads of 1-simplices with non-zero membership.
             head = self.graph_.row # first index
-            # tail: array of shape (n_1_simplices)
-            #     The indices of the tails of 1-simplices with non-zero membership.
+            # tail: The indices of the tails of 1-simplices with non-zero membership.
             tail = self.graph_.col # second index
 
             epochs_per_sample = make_epochs_per_sample(self.graph_.data, self.total_epochs)
 
             rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
 
-            embedding, eps, cost = progressive_optimize_layout2(
+            if self.epochs == 0:
+                initialisation = spectral_layout(
+                    self._raw_data[:self.table.size()],
+                    self.graph_,
+                    self.n_components,
+                    self.random_state,
+                    metric="euclidean",
+                    metric_kwds=None,
+                )
+                expansion = 10.0 / np.abs(initialisation).max()
+                embedding = (initialisation * expansion).astype(
+                    np.float32
+                ) + self.random_state.normal(
+                    scale=0.0001, size=[self.graph_.shape[0], self.n_components]
+                ).astype(
+                    np.float32
+                )
+                self.Y[:self.table.size()] = embedding
+
+            embedding, self.epochs, cost = progressive_optimize_layout(
                 head_embedding=self.Y[:self.table.size()],
                 tail_embedding=self.Y[:self.table.size()],
                 head=head,
@@ -2278,11 +2255,6 @@ class UMAP(BaseEstimator):
                 verbose=True
             )
 
-            self.epochs = eps
-
-            # normalize embedding (Y) (DO WE HAVE TO ??)
-            # csr_graph = normalize(graph.tocsr(), norm="l1")
-
             self.Y[:self.table.size()] = embedding
 
             print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
@@ -2290,23 +2262,17 @@ class UMAP(BaseEstimator):
             with open(f'./result/log_fashion.txt', 'a') as log:
                 log.write(f"{self.table.size()}\t{self.epochs}\t{ts() - start}\t{cost}\n")
 
-            if self.epochs >= save_eps:
+            if self.epochs % save_eps == 0:
                 fig, ax = plt.subplots(1, figsize=(14, 10))
                 plt.scatter(*embedding.T, s=0.3, c=_y[:self.table.size()], cmap='Spectral', alpha=1.0)
                 plt.setp(ax, xticks=[], yticks=[])
-                plt.ylim(-12.0, +12.0)
-                plt.xlim(-12.0, +12.0)
+                plt.ylim(-15.0, +15.0)
+                plt.xlim(-15.0, +15.0)
                 cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
                 cbar.set_ticks(np.arange(10))
                 cbar.set_ticklabels(_item)
                 # plt.title('Fashion MNIST Embedded')
                 plt.savefig(f"./result/{self.epochs}.png")
-
-                save_eps += save_eps_term
-
-            # print(embedding)
-            # print(f"current epochs: {self.epochs}, cost: {cost/self.graph_.shape[0]}, shape: {self.graph_.shape}")
-
 
         self._input_hash = joblib.hash(self._raw_data)
 
@@ -2461,399 +2427,3 @@ class UMAP(BaseEstimator):
         )
 
         return embedding
-
-
-    def progressive_compute_membership_strengths(self, updatedIds):
-        """For selected indexes, construct the membership strength data for the 1-skeleton
-        of each local fuzzy simplicial set -- this is formed as a sparse matrix where each
-        row is a local fuzzy simplicial set, with a membership strength for the 1-simplex
-        to each other data point.
-
-        Parameters
-        ----------
-        updatedIds: list
-            indexes that need to be updated
-
-        Returns
-        -------
-        rows: array of shape (n_samples * n_neighbors)
-            Row data for the resulting sparse matrix (coo format)
-
-        cols: array of shape (n_samples * n_neighbors)
-            Column data for the resulting sparse matrix (coo format)
-
-        vals: array of shape (n_samples * n_neighbors)
-            Entries for the resulting sparse matrix (coo format)
-        """
-
-        for Aid in updatedIds: # point A
-            # the neighbors of Aid has been updated
-            for Bid in (self.indexes[Aid]): # point B
-
-                # index of B (e.g., indexes: [0 3 9 2 1] -> ix: [0 1 2 3 4])
-                ix = np.where(self.indexes[Aid]==Bid)[0]
-                
-                if(len(ix) < 1):
-                    raise ValueError("We didn't get the full knn for i")
-                ix = ix[0]
-
-                if self.indexes[Aid, ix] == Aid:
-                    val = 0.0
-                elif self.distances[Aid, ix] - self.rhos[Aid] <= 0.0:
-                    val = 1.0
-                else:
-                    val = np.exp(-((self.distances[Aid, ix] - self.rhos[Aid]) / (self.sigmas[Aid])))
-
-                self.rows[Aid * self.n_neighbors + ix] = Aid
-                self.cols[Aid * self.n_neighbors + ix] = Bid # self.indexes[Aid, ix]
-                self.vals[Aid * self.n_neighbors + ix] = val # sum of the vals = log2(k)*bandwidth
-
-                # print("Aid: {}, Bid: {}, val: {}".format(Aid, Bid, val))
-
-
-    def progressive_smooth_knn_dist(self, updatedIds, k, n_iter=64,
-        local_connectivity=1.0, bandwidth=1.0):
-        """Compute a continuous version of the distance to the kth nearest
-        neighbor for selected rows. That is, this is similar to knn-distance but
-        allows continuous k values rather than requiring an integral k. In essence
-        we are simply computing the distance such that the cardinality of fuzzy set
-        we generate is k.
-
-        Parameters
-        ----------
-        distances: array of shape (n_samples, n_neighbors)
-            Distances to nearest neighbors for each samples. Each row should be a
-            sorted list of distances to a given samples nearest neighbors.
-        
-        updatedIds: list
-            Indexes we are goint to update getting sigmas and rhos
-
-        k: float
-            The number of nearest neighbors to approximate for.
-
-        n_iter: int (optional, default 64)
-            We need to binary search for the correct distance value. This is the
-            max number of iterations to use in such a search.
-
-        local_connectivity: int (optional, default 1)
-            The local connectivity required -- i.e. the number of nearest
-            neighbors that should be assumed to be connected at a local level.
-            The higher this value the more connected the manifold becomes
-            locally. In practice this should be not more than the local intrinsic
-            dimension of the manifold.
-
-        bandwidth: float (optional, default 1)
-            The target bandwidth of the kernel, larger values will produce
-            larger return values.
-
-        Returns
-        -------
-        result: array of shape(n_samples)
-            The normalization factor derived from the metric tensor approximation.
-
-        rho: array of shape(n_samples)
-            The local connectivity adjustment.
-        """
-        target = np.log2(k) * bandwidth # 2.3192...
-
-        mean_distances = np.mean(self.distances[:self.table.size()])
-
-        for i in updatedIds:
-            lo = 0.0
-            hi = NPY_INFINITY
-            mid = 1.0
-
-            # TODO: This is very inefficient, but will do for now. FIXME
-            ## CALCULATE self.rhos[i]
-            ith_distances = self.distances[i] # ith_distances.shape = (1, 5)
-            non_zero_dists = ith_distances[ith_distances > 0.0] # select elements > 0.0
-            if non_zero_dists.shape[0] >= local_connectivity: # non_zero_dists.shape[0] = number of locally connected dots
-                index = int(np.floor(local_connectivity)) # local_connectivity = 1.0
-                interpolation = local_connectivity - index
-                if index > 0:
-                    self.rhos[i] = non_zero_dists[index - 1]
-                    if interpolation > SMOOTH_K_TOLERANCE: # SMOOTH_K_TOLERANCE = 1e-5
-                        self.rhos[i] += interpolation * (
-                            non_zero_dists[index] - non_zero_dists[index - 1]
-                        )
-                else: # if index == 0 (0 <= local_connectivity < 1)
-                    self.rhos[i] = interpolation * non_zero_dists[0]
-            elif non_zero_dists.shape[0] > 0:
-                self.rhos[i] = np.max(non_zero_dists)
-
-            ## CALCULATE self.sigmas[i]
-            for n in range(n_iter):
-
-                psum = 0.0
-                for j in range(1, self.n_neighbors): # range(1,k) => 1,2,...,k-1
-                    d = self.distances[i, j] - self.rhos[i]
-                    if d > 0:
-                        psum += np.exp(-(d / mid))
-                    else:
-                        psum += 1.0
-
-                # break if it is lower than the threshold
-                if np.fabs(psum - target) < SMOOTH_K_TOLERANCE: # fabs: Compute the absolute values element-wise.
-                    break
-
-                if psum > target:
-                    hi = mid
-                    mid = (lo + hi) / 2.0
-                else:
-                    lo = mid
-                    if hi == NPY_INFINITY:
-                        mid *= 2
-                    else:
-                        mid = (lo + hi) / 2.0
-
-            self.sigmas[i] = mid
-
-            # TODO: This is very inefficient, but will do for now. FIXME
-            if self.rhos[i] > 0.0:
-                mean_ith_distances = np.mean(ith_distances)
-                if self.sigmas[i] < MIN_K_DIST_SCALE * mean_ith_distances:
-                    self.sigmas[i] = MIN_K_DIST_SCALE * mean_ith_distances
-            else:
-                if self.sigmas[i] < MIN_K_DIST_SCALE * mean_distances:
-                    self.sigmas[i] = MIN_K_DIST_SCALE * mean_distances
-
-
-    def progressive_optimize_layout(
-        self,
-        head_embedding,
-        tail_embedding,
-        graph,
-        a,
-        b,
-        random_state,
-        gamma=1.0,
-        negative_sample_rate=5.0,
-        verbose=False):
-        """Improve an embedding using stochastic gradient descent to minimize the
-        fuzzy set cross entropy between the 1-skeletons of the high dimensional
-        and low dimensional fuzzy simplicial sets. In practice this is done by
-        sampling edges based on their membership strength (with the (1-p) terms
-        coming from negative sampling similar to word2vec).
-
-        Parameters
-        ----------
-        head_embedding: array of shape (n_samples, n_components)
-            The initial embedding to be improved by SGD.
-
-        tail_embedding: array of shape (source_samples, n_components)
-            The reference embedding of embedded points. If not embedding new
-            previously unseen points with respect to an existing embedding this
-            is simply the head_embedding (again); otherwise it provides the
-            existing embedding to embed with respect to.
-
-        a: float
-            Parameter of differentiable approximation of right adjoint functor
-
-        b: float
-            Parameter of differentiable approximation of right adjoint functor
-
-        rng_state: array of int64, shape (3,)
-            The internal state of the rng
-
-        gamma: float (optional, default 1.0)
-            Weight to apply to negative samples.
-
-        negative_sample_rate: int (optional, default 5)
-            Number of negative samples to use per positive sample.
-
-        verbose: bool (optional, default False)
-            Whether to report information on the current progress of the algorithm.
-
-        Returns
-        -------
-        embedding: array of shape (n_samples, n_components)
-            The optimized embedding.
-        """
-
-        graph = graph.tocoo() # type: csr_matrix to coo_matrix
-        graph.sum_duplicates()
-        n_vertices = graph.shape[1] # n_vertices: The number of vertices (0-simplices) in the dataset.
-
-        # remove values smaller than the threshold (e.g., 1 / 200)
-        graph.data[graph.data < (graph.data.max() / float(self.total_epochs))] = 0.0
-        graph.eliminate_zeros()
-
-        # head: array of shape (n_1_simplices)
-        #     The indices of the heads of 1-simplices with non-zero membership.
-        head = graph.row # first index
-        # tail: array of shape (n_1_simplices)
-        #     The indices of the tails of 1-simplices with non-zero membership.
-        tail = graph.col # second index
-
-        # print(f"graph.row.shape: {graph.row.shape}")
-        # print(f"graph.col.shape: {graph.col.shape}")
-
-        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
-
-        dim = head_embedding.shape[1] # embedding dimension (e.g., 2)
-        move_other = head_embedding.shape[0] == tail_embedding.shape[0] # table.size == table.size, True
-
-        if self.condition == "sampling":
-            # epochs_per_samples: array of shape (n_1_simplices)
-            #     A float value of the number of epochs per 1-simplex. 1-simplices with
-            #     weaker membership strength will have more epochs between being sampled.
-            epochs_per_sample = make_epochs_per_sample(graph.data, self.total_epochs)
-            epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
-            epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
-            epoch_of_next_sample = epochs_per_sample.copy()
-
-            epochs_per_sample[epochs_per_sample > 5 + self.epochs*0.1] = 5 + self.epochs*0.1
-
-            # set running epochs of this iteration
-            run_epoch = int(np.ceil(epochs_per_sample.max()) + 1)
-
-            # incrementally run sampling process
-            if self.remainder.size != 0:
-                # add remaining values from previous step
-                epoch_of_next_sample[:self.remainder.size] += self.remainder
-                epoch_of_next_sample[epoch_of_next_sample > 5 + self.epochs*0.1] = 5 + self.epochs*0.1
-                # this is somewhat huge because of some big values. Do we need to clip? (change if required after seeing the result)
-                run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
-
-                # print("1: ", epochs_per_sample)
-                # print("+: ", self.remainder)
-                # print("2: ", epoch_of_next_sample)
-                # print(f"run_epoch: ", run_epoch)
-                print(f"max: ", epochs_per_sample.max())
-                # print("epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0])
-
-            for epoch in range(run_epoch):
-
-                self.epochs += 1
-                for i in range(epochs_per_sample.shape[0]):
-                    if epoch_of_next_sample[i] <= epoch: ############
-                        j = head[i] # first index
-                        k = tail[i] # second index
-
-                        current = head_embedding[j] # position of j index in embedded space
-                        other = tail_embedding[k] # position of k index in embedded space
-
-                        dist_squared = rdist(current, other) # squared distance between pts = (x - y)^2
-
-                        if dist_squared > 0.0:
-                            grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
-                            grad_coeff /= a * pow(dist_squared, b) + 1.0
-                        else:
-                            grad_coeff = 0.0
-
-                        # update target index
-                        for d in range(dim):
-                            grad_d = clip(grad_coeff * (current[d] - other[d])) # (min: -4, max: 4), do have a strong influence
-                            current[d] += grad_d * self.alpha
-                            if move_other:
-                                other[d] += -grad_d * self.alpha
-
-                        epoch_of_next_sample[i] += epochs_per_sample[i]
-                        
-                        # number of negative samples to be considered (min: 4, max: ?)
-                        n_neg_samples = int(
-                            (epoch - epoch_of_next_negative_sample[i]) ###############
-                            / epochs_per_negative_sample[i]
-                        )
-
-                        # update negative sampled indexes
-                        for p in range(n_neg_samples):
-                            k = tau_rand_int(rng_state) % n_vertices
-
-                            other = tail_embedding[k]
-
-                            dist_squared = rdist(current, other)
-
-                            if dist_squared > 0.0:
-                                grad_coeff = 2.0 * gamma * b
-                                grad_coeff /= (0.001 + dist_squared) * (
-                                    a * pow(dist_squared, b) + 1
-                                )
-                            elif j == k:
-                                continue
-                            else:
-                                grad_coeff = 0.0
-
-                            for d in range(dim):
-                                if grad_coeff > 0.0:
-                                    grad_d = clip(grad_coeff * (current[d] - other[d]))
-                                else:
-                                    grad_d = 4.0
-                                current[d] += grad_d * self.alpha
-
-                        epoch_of_next_negative_sample[i] += (
-                            n_neg_samples * epochs_per_negative_sample[i]
-                        )
-
-                self.alpha = self._initial_alpha * (1.0 - (self.epochs / self.total_epochs))
-
-                if verbose and self.total_epochs % int(self.epochs / 10) == 0:
-                    print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
-            
-            # this will be added next time
-            self.remainder = np.subtract(epoch_of_next_sample, epoch)
-
-
-        ## NEED TO FIX
-        elif self.condition == "nonsampling":
-            self.epochs += 1
-
-            assert head.shape[0] == tail.shape[0], "head shape is not the same as tail shape"
-            run_epoch = head.shape[0]
-
-            for i in range(run_epoch):
-                j = head[i] # first index
-                k = tail[i] # second index
-
-                current = head_embedding[j] # position of j index in embedded space
-                other = tail_embedding[k] # position of k index in embedded space
-
-                dist_squared = rdist(current, other) # squared distance between pts = (x - y)^2
-
-                if dist_squared > 0.0:
-                    grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
-                    grad_coeff /= a * pow(dist_squared, b) + 1.0
-                else:
-                    grad_coeff = 0.0
-
-                # update target index
-                for d in range(dim):
-                    grad_d = clip(grad_coeff * (current[d] - other[d])) # (min: -4, max: 4), do have a strong influence
-                    current[d] += grad_d * self.alpha
-                    if move_other:
-                        other[d] += -grad_d * self.alpha
-
-                # number of negative samples to be considered (min: 4, max: ?)
-                n_neg_samples = int(4 + random_state.rand()*10)
-
-                # update negative sampled indexes
-                for p in range(n_neg_samples):
-                    k = tau_rand_int(rng_state) % n_vertices
-
-                    other = tail_embedding[k]
-
-                    dist_squared = rdist(current, other)
-
-                    if dist_squared > 0.0:
-                        grad_coeff = 2.0 * gamma * b
-                        grad_coeff /= (0.001 + dist_squared) * (
-                            a * pow(dist_squared, b) + 1
-                        )
-                    elif j == k:
-                        continue
-                    else:
-                        grad_coeff = 0.0
-
-                    for d in range(dim):
-                        if grad_coeff > 0.0:
-                            grad_d = clip(grad_coeff * (current[d] - other[d]))
-                        else:
-                            grad_d = 4.0
-                        current[d] += grad_d * self.alpha
-
-            self.alpha = self._initial_alpha * (1.0 - (self.epochs / self.total_epochs))
-
-            if verbose and self.total_epochs % int(self.epochs / 10) == 0:
-                print("\tcompleted ", epoch, " / ", self.epochs, "epochs")
-            
-        return head_embedding
