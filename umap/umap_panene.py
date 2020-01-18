@@ -1304,7 +1304,10 @@ def progressive_optimize_layout(
     head,
     tail,
     n_epochs,
+    last_epochs,
     total_epochs,
+    first_batch_epochs,
+    second_batch_epochs,
     n_vertices,
     epochs_per_sample,
     a,
@@ -1321,35 +1324,17 @@ def progressive_optimize_layout(
     epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
     epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
     epoch_of_next_sample = epochs_per_sample.copy()
-    # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
-    epochs_per_sample[epochs_per_sample > 20 ] = 20
-    epoch_of_next_sample[epoch_of_next_sample > 20] = 20
 
-    # if n_epochs < total_epochs * 0.05:
-    #     epochs_per_sample[epochs_per_sample > 5 ] = 5
-    #     epoch_of_next_sample[epoch_of_next_sample > 5] = 5
-    # else:
-    #     epochs_per_sample[epochs_per_sample > 10 ] = 10
-    #     epoch_of_next_sample[epoch_of_next_sample > 10] = 10
+    if n_epochs == 0:
+        epochs_per_sample[epochs_per_sample > first_batch_epochs ] = first_batch_epochs
+        epoch_of_next_sample[epoch_of_next_sample > first_batch_epochs] = first_batch_epochs
+    else:
+        epochs_per_sample[epochs_per_sample > second_batch_epochs ] = second_batch_epochs
+        epoch_of_next_sample[epoch_of_next_sample > second_batch_epochs] = second_batch_epochs
     run_epoch = int(np.ceil(epoch_of_next_sample.max()))
 
-    # epochs_per_sample[epochs_per_sample > 50 + n_epochs] = 50 + n_epochs
-    # epoch_of_next_sample[epoch_of_next_sample > 50 + n_epochs] = 50 + n_epochs
-
-    # if (n_epochs >= total_epochs * 0.2) & (n_epochs < total_epochs * 0.7):
-    #     epochs_per_sample[epochs_per_sample > 800 ] = 800
-    #     epoch_of_next_sample[epoch_of_next_sample > 800] = 800
-    # elif n_epochs >= total_epochs * 0.8:
-    #     epochs_per_sample[epochs_per_sample > 200 ] = 200
-    #     epoch_of_next_sample[epoch_of_next_sample > 200] = 200
-
-    # ratio = epochs_per_sample.max() * (1.0 - float(n_epochs) / float(total_epochs))
-    # epochs_per_sample[epochs_per_sample > ratio ] = ratio + 1
-    # epoch_of_next_sample[epoch_of_next_sample > ratio] = ratio + 1
-    # run_epoch = int(np.ceil(epoch_of_next_sample.max()) + 1)
-
     for n in range(run_epoch):
-        alpha = initial_alpha - float(n_epochs) * 0.9 * 10 / float(total_epochs)
+        alpha = initial_alpha - float(n_epochs) * 0.9 / float(last_epochs)
         if alpha < 0.1:
             alpha = 0.1
         # alpha = initial_alpha * (1.0 - float(n_epochs) / float(total_epochs))
@@ -1429,14 +1414,9 @@ def progressive_optimize_layout(
             for l in range(len(bit_array)):
                 sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
 
-            # if verbose and n % 50 == 0:
-            #     print("\tcompleted ", n_epochs, " / ", total_epochs, "epochs\t, cost/sum_bit_array: ", cost / sum_bit_array,
-            #         ",\t epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ",\t sum_bit_array: ", int(sum_bit_array))
         n_epochs += 1
 
-    # return head_embedding, n_epochs
     return head_embedding, n_epochs, cost / sum_bit_array
-
 
 
 class UMAP(BaseEstimator):
@@ -1613,6 +1593,9 @@ class UMAP(BaseEstimator):
         n_components=2,
         metric="euclidean",
         n_epochs=None,
+        last_epochs=200,
+        first_batch_epochs=50,
+        second_batch_epochs=10,
         learning_rate=1.0,
         init="spectral",
         min_dist=0.1,
@@ -1632,12 +1615,16 @@ class UMAP(BaseEstimator):
         target_metric_kwds=None,
         target_weight=0.5,
         transform_seed=42,
+        ops=300,
         verbose=False):
 
         self.n_neighbors = n_neighbors
         self.metric = metric
         self.metric_kwds = metric_kwds
         self.n_epochs = n_epochs
+        self.last_epochs = last_epochs
+        self.first_batch_epochs = first_batch_epochs
+        self.second_batch_epochs = second_batch_epochs
         self.init = init
         self.n_components = n_components
         self.repulsion_strength = repulsion_strength
@@ -1656,6 +1643,7 @@ class UMAP(BaseEstimator):
         self.target_metric_kwds = target_metric_kwds
         self.target_weight = target_weight
         self.transform_seed = transform_seed
+        self.ops = ops
         self.verbose = verbose
 
         self.a = a
@@ -1697,6 +1685,16 @@ class UMAP(BaseEstimator):
             self.n_epochs <= 10 or not isinstance(self.n_epochs, int)
         ):
             raise ValueError("n_epochs must be a positive integer " "larger than 10")
+        if self.last_epochs is not None and (
+            self.last_epochs <= 10 or not isinstance(self.last_epochs, int)
+        ):
+            raise ValueError("last_epochs must be a positive integer " "larger than 10")
+        if self.first_batch_epochs < 0:
+            raise ValueError("first_batch_epochs must be positive")
+        if self.second_batch_epochs < 0:
+            raise ValueError("second_batch_epochs must be positive")
+        if self.ops < 0:
+            raise ValueError("ops must be positive")
 
     def fit(self, X, y=None):
         """Fit X into an embedded space.
@@ -2075,7 +2073,7 @@ class UMAP(BaseEstimator):
             - calculate early exaggeration factor
             - if size < N (left points are waiting to be added)
                 - update similarity matrix (update_similarity())
-            - compute gradient (compute_graident())
+            - compute gradient
             - update gradient
             - recalculate cost & update Y
 
@@ -2119,10 +2117,10 @@ class UMAP(BaseEstimator):
         else:
             self._target_metric_kwds = {}
 
-        if isinstance(self.init, np.ndarray):
-            init = check_array(self.init, dtype=np.float32, accept_sparse=False)
-        else:
-            init = self.init
+        # if isinstance(self.init, np.ndarray):
+        #     init = check_array(self.init, dtype=np.float32, accept_sparse=False)
+        # else:
+        #     init = self.init
 
         self.alpha = self._initial_alpha = self.learning_rate
 
@@ -2192,11 +2190,14 @@ class UMAP(BaseEstimator):
         while self.epochs < self.total_epochs:
 
             if(self.table.size() < self.N):
-
-                ops = 5000 if self.epochs == 0 else 300
+                
+                if self.epochs == 0:
+                    self._ops = 5000
+                else:
+                    self._ops = self.ops
 
                 # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=ops, set_op_mix_ratio=1.0, init="random")
+                adj_matrix = self.update_similarity(ops=self._ops, set_op_mix_ratio=1.0, init="random")
                 self.graph_ = adj_matrix
                 if self.epochs == 0:
                     init_time = ts() - start
@@ -2221,6 +2222,7 @@ class UMAP(BaseEstimator):
 
             rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
 
+            # For the first batch, initialize them with spectral embedding
             if self.epochs == 0:
                 initialisation = spectral_layout(
                     self._raw_data[:self.table.size()],
@@ -2240,13 +2242,17 @@ class UMAP(BaseEstimator):
                 )
                 self.Y[:self.table.size()] = embedding
 
+            # Optimize embedding progressively
             embedding, self.epochs, cost = progressive_optimize_layout(
                 head_embedding=self.Y[:self.table.size()],
                 tail_embedding=self.Y[:self.table.size()],
                 head=head,
                 tail=tail,
                 n_epochs=self.epochs,
+                last_epochs=self.last_epochs,
                 total_epochs=self.total_epochs,
+                first_batch_epochs=self.first_batch_epochs,
+                second_batch_epochs=self.second_batch_epochs,
                 n_vertices = self.graph_.shape[1],
                 epochs_per_sample=epochs_per_sample,
                 a=self._a,
