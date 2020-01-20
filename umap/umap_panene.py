@@ -1321,23 +1321,21 @@ def progressive_optimize_layout(
     dim = head_embedding.shape[1]
     move_other = head_embedding.shape[0] == tail_embedding.shape[0]
 
-    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
-    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
-    epoch_of_next_sample = epochs_per_sample.copy()
-
     if n_epochs == 0:
         epochs_per_sample[epochs_per_sample > first_batch_epochs ] = first_batch_epochs
-        epoch_of_next_sample[epoch_of_next_sample > first_batch_epochs] = first_batch_epochs
     else:
         epochs_per_sample[epochs_per_sample > second_batch_epochs ] = second_batch_epochs
-        epoch_of_next_sample[epoch_of_next_sample > second_batch_epochs] = second_batch_epochs
+    epoch_of_next_sample = epochs_per_sample.copy()
+
+    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+
     run_epoch = int(np.ceil(epoch_of_next_sample.max()))
 
     for n in range(run_epoch):
         alpha = initial_alpha - float(n_epochs) * 0.9 / float(last_epochs)
         if alpha < 0.1:
             alpha = 0.1
-        # alpha = initial_alpha * (1.0 - float(n_epochs) / float(total_epochs))
 
         if n_epochs >= total_epochs:
             break
@@ -1359,14 +1357,14 @@ def progressive_optimize_layout(
                 if dist_squared > 0.0: # if they are not the same pts
                     grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
                     grad_coeff /= a * pow(dist_squared, b) + 1.0
-                    if bit_array[i] == 0: # if this edge has not been considered, add this to the cost
+                    if bit_array[i] == 0: # count this edge to the cost
                         c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
                         cost -= math.log(c1)
                 else:
                     grad_coeff = 0.0
 
                 for d in range(dim):
-                    grad_d = clip(grad_coeff * (current[d] - other[d]))
+                    grad_d = clip(grad_coeff * (current[d] - other[d])) # grad_coeff * (y_i - y_j)
                     current[d] += grad_d * alpha
                     if move_other:
                         other[d] += -grad_d * alpha
@@ -1390,9 +1388,9 @@ def progressive_optimize_layout(
                         grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
                         if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
                             c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
-                            cost += gamma * math.log(c2)
+                            cost -= gamma * math.log(c2)
                             if p == (n_neg_samples - 1):
-                                bit_array[i] = 1 # this edge will not be considered in this epoch anymore
+                                bit_array[i] = 1 # In the end, all 1s will be summed up to check the number of edges considered in this epoch
                     elif j == k:
                         continue
                     else:
@@ -1400,7 +1398,7 @@ def progressive_optimize_layout(
 
                     for d in range(dim):
                         if grad_coeff > 0.0:
-                            grad_d = clip(grad_coeff * (current[d] - other[d]))
+                            grad_d = clip(grad_coeff * (current[d] - other[d])) # grad_coeff * (y_i - y_j)
                         else:
                             grad_d = 4.0
                         current[d] += grad_d * alpha
@@ -1616,6 +1614,7 @@ class UMAP(BaseEstimator):
         target_weight=0.5,
         transform_seed=42,
         ops=300,
+        first_ops=5000,
         verbose=False):
 
         self.n_neighbors = n_neighbors
@@ -1644,6 +1643,7 @@ class UMAP(BaseEstimator):
         self.target_weight = target_weight
         self.transform_seed = transform_seed
         self.ops = ops
+        self.first_ops = first_ops
         self.verbose = verbose
 
         self.a = a
@@ -1695,6 +1695,8 @@ class UMAP(BaseEstimator):
             raise ValueError("second_batch_epochs must be positive")
         if self.ops < 0:
             raise ValueError("ops must be positive")
+        if (self.first_ops < 0) | (self.first_ops < self.ops):
+            raise ValueError("first_ops must be positive and bigger than ops")
 
     def fit(self, X, y=None):
         """Fit X into an embedded space.
@@ -1953,7 +1955,7 @@ class UMAP(BaseEstimator):
 
 
     # PANENE IMPLEMENTATION
-    def update_similarity(self, ops, set_op_mix_ratio, init):
+    def update_similarity(self, ops, set_op_mix_ratio):
         '''
         UPDATE_SIMILARITY 
         ----------
@@ -2002,7 +2004,7 @@ class UMAP(BaseEstimator):
                 if (updates['addPointResult'] > 0) & (i == self.table.size() - 1):
                     nndist = np.mean(self.distances[:, 1]) # WHY second column?? is this just chosen randomly?
                     self.Y[self.table.size()-updates['addPointResult']:self.table.size()] += self.random_state.normal(
-                        scale=0.001 * nndist, size=[updates['addPointResult'], self.n_components] # 0.001? 0.0001?
+                        scale=0.001 * nndist, size=[updates['addPointResult'], self.n_components] # scale=0.001? 0.0001?
                     ).astype(np.float32)
 
         # for i in updatedIds:
@@ -2025,7 +2027,7 @@ class UMAP(BaseEstimator):
 
         # print(f"sigmas: {self.sigmas[:self.table.size()]}, rhos: {self.rhos[:self.table.size()]}")
 
-        # progressive_compute_membership_strengths
+        # compute membership strengths progressively
         self.rows, self.cols, self.vals = progressive_compute_membership_strengths(
             updatedIds,
             self.indexes,
@@ -2052,6 +2054,7 @@ class UMAP(BaseEstimator):
             set_op_mix_ratio * (result + transpose - prod_matrix)
             + (1.0 - set_op_mix_ratio) * prod_matrix
         )
+        # result = (result + transpose) / 2  # another way to make it symmetric
 
         result.eliminate_zeros()
 
@@ -2181,23 +2184,30 @@ class UMAP(BaseEstimator):
         if self.N <= 10000:
             self.total_epochs = 1000
         else:
-            self.total_epochs = 4000
+            self.total_epochs = 5000
 
         self.epochs = 0
         save_eps = 100
+
+        ###########################
+        self.first_batch_epochs = 50
+        self.second_batch_epochs = 10
+        self.last_epochs = 200
+        self.first_ops = 5000
+        self.ops = 300
+        ###########################
 
         # run iteration (work progressively)
         while self.epochs < self.total_epochs:
 
             if(self.table.size() < self.N):
-                
                 if self.epochs == 0:
-                    self._ops = 5000
+                    self._ops = self.first_ops
                 else:
                     self._ops = self.ops
 
                 # get COO formatted adjacency matrix
-                adj_matrix = self.update_similarity(ops=self._ops, set_op_mix_ratio=1.0, init="random")
+                adj_matrix = self.update_similarity(ops=self._ops, set_op_mix_ratio=1.0)
                 self.graph_ = adj_matrix
                 if self.epochs == 0:
                     init_time = ts() - start

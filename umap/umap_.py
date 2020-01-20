@@ -1074,12 +1074,11 @@ def progressive_optimize_layout(
     move_other = head_embedding.shape[0] == tail_embedding.shape[0]
     alpha = initial_alpha
 
-    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
-    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+    epochs_per_sample[epochs_per_sample > run_epochs ] = run_epochs
     epoch_of_next_sample = epochs_per_sample.copy()
 
-    epochs_per_sample[epochs_per_sample > run_epochs ] = run_epochs
-    epoch_of_next_sample[epoch_of_next_sample > run_epochs] = run_epochs
+    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
 
     for n in range(run_epochs):
         alpha = initial_alpha - float(eps) * 0.9 * 100 / float(n_epochs)
@@ -1138,7 +1137,7 @@ def progressive_optimize_layout(
                         grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
                         if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
                             c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
-                            cost += gamma * math.log(c2)
+                            cost -= gamma * math.log(c2)
                             if p == (n_neg_samples - 1):
                                 bit_array[i] = 1 # this edge will not be considered in this epoch anymore
                     elif j == k:
