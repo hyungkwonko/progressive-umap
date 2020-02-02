@@ -139,8 +139,7 @@ if __name__ == "__main__":
     item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
 
     # UMAP run
-    # umap.UMAP(n_neighbors=5).fit_transform(X=x, y=y, item=item)
-    umap.UMAP(n_neighbors=5).fit_transform(X=x, y=None, label=y, item=item)
+    umap.UMAP(n_neighbors=5).fit_transform(X=x, y=None, label=y, item=item, progressive=False)
     # run_umap(x=x, y=y, item=item, n_neighbors_list=[5])
 
 

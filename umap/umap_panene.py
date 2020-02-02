@@ -1017,6 +1017,125 @@ def simplicial_set_embedding(
 
     return embedding
 
+@numba.njit(fastmath=True, parallel=True)
+def optimize_layout2(
+    head_embedding,
+    tail_embedding,
+    data,
+    head,
+    tail,
+    eps,
+    n_epochs,
+    batch_epochs,
+    n_vertices,
+    epochs_per_sample,
+    a,
+    b,
+    rng_state,
+    gamma=1.0,
+    initial_alpha=1.0,
+    negative_sample_rate=5.0,
+    verbose=False):
+
+    dim = head_embedding.shape[1]
+    move_other = head_embedding.shape[0] == tail_embedding.shape[0]
+    alpha = initial_alpha
+
+    epochs_per_sample[epochs_per_sample > batch_epochs ] = batch_epochs
+    epoch_of_next_sample = epochs_per_sample.copy()
+
+    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
+    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
+
+    for n in range(batch_epochs):
+        alpha = initial_alpha - float(eps) * 0.9 * 100 / float(n_epochs)
+        if alpha < 0.1:
+            alpha = 0.1
+        # alpha = initial_alpha * (1.0 - float(eps) / float(n_epochs))
+
+        if eps >= n_epochs:
+            break
+
+        cost = 0
+        bit_array = [0] * epochs_per_sample.shape[0] # numba does not support bitarray, we use list instead
+
+        for i in range(epochs_per_sample.shape[0]):
+            if epoch_of_next_sample[i] <= n: # loss at 0 epoch because of this
+
+                j = head[i] # first index
+                k = tail[i] # second index
+
+                current = head_embedding[j] # position of j index in embedded space
+                other = tail_embedding[k] # position of k index in embedded space
+
+                dist_squared = rdist(current, other) # if embedding space is 2D (x1-x2)^2 + (y1-y2)^2
+
+                if dist_squared > 0.0: # if they are not the same pts
+                    grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
+                    grad_coeff /= a * pow(dist_squared, b) + 1.0
+                    if bit_array[i] == 0: # if this edge has not been considered, add this to the cost
+                        c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
+                        cost -= data[i] * math.log(c1)
+                else:
+                    grad_coeff = 0.0
+
+                for d in range(dim):
+                    grad_d = clip(grad_coeff * (current[d] - other[d]))
+                    current[d] += grad_d * alpha
+                    if move_other:
+                        other[d] += -grad_d * alpha
+
+                epoch_of_next_sample[i] += epochs_per_sample[i]
+
+                n_neg_samples = int(
+                    (n - epoch_of_next_negative_sample[i])
+                    / epochs_per_negative_sample[i]
+                )
+
+                for p in range(n_neg_samples):
+                    k = tau_rand_int(rng_state) % n_vertices
+
+                    other = tail_embedding[k]
+
+                    dist_squared = rdist(current, other)
+
+                    if dist_squared > 0.0:
+                        grad_coeff = 2.0 * gamma * b
+                        grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
+                        if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
+                            c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
+                            cost -= data[i] * gamma * math.log(c2)
+                            if p == (n_neg_samples - 1):
+                                bit_array[i] = 1 # this edge will not be considered in this epoch anymore
+                    elif j == k:
+                        continue
+                    else:
+                        grad_coeff = 0.0
+
+                    for d in range(dim):
+                        if grad_coeff > 0.0:
+                            grad_d = clip(grad_coeff * (current[d] - other[d]))
+                        else:
+                            grad_d = 4.0
+                        current[d] += grad_d * alpha
+
+                epoch_of_next_negative_sample[i] += (
+                    n_neg_samples * epochs_per_negative_sample[i]
+                )
+
+        if n != 0:
+            sum_bit_array = 1e-4 # prevent 0 division
+            for l in range(len(bit_array)):
+                sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
+
+            if verbose and n % 50 == 0:
+                print("\tcompleted ", eps, " / ", n_epochs, "epochs\t, cost/sum_bit_array: ", cost / sum_bit_array,
+                    ",\t epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ",\t sum_bit_array: ", int(sum_bit_array))
+        eps += 1
+
+    # return head_embedding, eps
+    return head_embedding, eps, cost / sum_bit_array
+
 
 @numba.njit()
 def init_transform(indices, weights, embedding):
@@ -1301,13 +1420,13 @@ def progressive_compute_membership_strengths(
 def progressive_optimize_layout(
     head_embedding,
     tail_embedding,
+    data,
     head,
     tail,
-    n_epochs,
+    epochs,
     last_epochs,
-    total_epochs,
-    first_batch_epochs,
-    second_batch_epochs,
+    n_epochs,
+    batch_epochs,
     n_vertices,
     epochs_per_sample,
     a,
@@ -1321,10 +1440,7 @@ def progressive_optimize_layout(
     dim = head_embedding.shape[1]
     move_other = head_embedding.shape[0] == tail_embedding.shape[0]
 
-    if n_epochs == 0:
-        epochs_per_sample[epochs_per_sample > first_batch_epochs ] = first_batch_epochs
-    else:
-        epochs_per_sample[epochs_per_sample > second_batch_epochs ] = second_batch_epochs
+    epochs_per_sample[epochs_per_sample > batch_epochs ] = batch_epochs
     epoch_of_next_sample = epochs_per_sample.copy()
 
     epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
@@ -1333,11 +1449,11 @@ def progressive_optimize_layout(
     run_epoch = int(np.ceil(epoch_of_next_sample.max()))
 
     for n in range(run_epoch):
-        alpha = initial_alpha - float(n_epochs) * 0.9 / float(last_epochs)
+        alpha = initial_alpha - float(epochs) * 0.9 / float(last_epochs)
         if alpha < 0.1:
             alpha = 0.1
 
-        if n_epochs >= total_epochs:
+        if epochs >= n_epochs:
             break
 
         cost = 0
@@ -1359,7 +1475,8 @@ def progressive_optimize_layout(
                     grad_coeff /= a * pow(dist_squared, b) + 1.0
                     if bit_array[i] == 0: # count this edge to the cost
                         c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
-                        cost -= math.log(c1)
+                        cost -= data[i] * math.log(c1)
+                        #cost -= math.log(c1)
                 else:
                     grad_coeff = 0.0
 
@@ -1388,7 +1505,8 @@ def progressive_optimize_layout(
                         grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
                         if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
                             c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
-                            cost -= gamma * math.log(c2)
+                            cost -= data[i] * gamma * math.log(c2)
+                            #cost -= gamma * math.log(c2)
                             if p == (n_neg_samples - 1):
                                 bit_array[i] = 1 # In the end, all 1s will be summed up to check the number of edges considered in this epoch
                     elif j == k:
@@ -1412,9 +1530,9 @@ def progressive_optimize_layout(
             for l in range(len(bit_array)):
                 sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
 
-        n_epochs += 1
+        epochs += 1
 
-    return head_embedding, n_epochs, cost / sum_bit_array
+    return head_embedding, epochs, cost / sum_bit_array
 
 
 class UMAP(BaseEstimator):
@@ -1591,9 +1709,9 @@ class UMAP(BaseEstimator):
         n_components=2,
         metric="euclidean",
         n_epochs=None,
+        epochs=0,
         last_epochs=200,
-        first_batch_epochs=50,
-        second_batch_epochs=10,
+        batch_epochs=50,
         learning_rate=1.0,
         init="spectral",
         min_dist=0.1,
@@ -1621,9 +1739,9 @@ class UMAP(BaseEstimator):
         self.metric = metric
         self.metric_kwds = metric_kwds
         self.n_epochs = n_epochs
+        self.epochs = epochs
         self.last_epochs = last_epochs
-        self.first_batch_epochs = first_batch_epochs
-        self.second_batch_epochs = second_batch_epochs
+        self.batch_epochs = batch_epochs
         self.init = init
         self.n_components = n_components
         self.repulsion_strength = repulsion_strength
@@ -1689,16 +1807,15 @@ class UMAP(BaseEstimator):
             self.last_epochs <= 10 or not isinstance(self.last_epochs, int)
         ):
             raise ValueError("last_epochs must be a positive integer " "larger than 10")
-        if self.first_batch_epochs < 0:
-            raise ValueError("first_batch_epochs must be positive")
-        if self.second_batch_epochs < 0:
-            raise ValueError("second_batch_epochs must be positive")
+        if self.batch_epochs < 0:
+            raise ValueError("batch_epochs must be positive")
         if self.ops < 0:
             raise ValueError("ops must be positive")
         if (self.first_ops < 0) | (self.first_ops < self.ops):
             raise ValueError("first_ops must be positive and bigger than ops")
 
-    def fit(self, X, y=None):
+    # def fit(self, X, y=None):
+    def fit(self, X, y, label, item):
         """Fit X into an embedded space.
 
         Optionally use y for supervised dimension reduction.
@@ -1717,7 +1834,9 @@ class UMAP(BaseEstimator):
             The relevant attributes are ``target_metric`` and
             ``target_metric_kwds``.
         """
-        
+
+        self.start = ts()
+
         X = check_array(X, dtype=np.float32, accept_sparse="csr")
         self._raw_data = X
 
@@ -1929,7 +2048,7 @@ class UMAP(BaseEstimator):
         if self.verbose:
             print(ts(), "Construct embedding")
 
-        self.embedding_ = simplicial_set_embedding(
+        self.embedding_ = self.simplicial_set_embedding2(
             self._raw_data,
             self.graph_,
             self.n_components,
@@ -1944,6 +2063,9 @@ class UMAP(BaseEstimator):
             self.metric,
             self._metric_kwds,
             self.verbose,
+            self.start,
+            label,
+            item,
         )
 
         if self.verbose:
@@ -1953,6 +2075,130 @@ class UMAP(BaseEstimator):
         
         return self
 
+
+    @measure_time
+    def simplicial_set_embedding2(
+        self,
+        data,
+        graph,
+        n_components,
+        initial_alpha,
+        a,
+        b,
+        gamma,
+        negative_sample_rate,
+        n_epochs,
+        init,
+        random_state,
+        metric,
+        metric_kwds,
+        verbose,
+        time,
+        label,
+        item):
+
+        graph = graph.tocoo()
+        graph.sum_duplicates()
+        n_vertices = graph.shape[1]
+
+        if n_epochs <= 0:
+            # For smaller datasets we can use more epochs
+            if graph.shape[0] <= 10000:
+                n_epochs = 500
+            else:
+                n_epochs = 5000
+
+        graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
+        graph.eliminate_zeros()
+
+        if isinstance(init, str) and init == "random":
+            embedding = random_state.uniform(
+                low=-10.0, high=10.0, size=(graph.shape[0], n_components)
+            ).astype(np.float32)
+        elif isinstance(init, str) and init == "spectral":
+            # We add a little noise to avoid local minima for optimization to come
+            initialisation = spectral_layout(
+                data,
+                graph,
+                n_components,
+                random_state,
+                metric=metric,
+                metric_kwds=metric_kwds,
+            )
+            expansion = 10.0 / np.abs(initialisation).max()
+            embedding = (initialisation * expansion).astype(
+                np.float32
+            ) + random_state.normal(
+                scale=0.0001, size=[graph.shape[0], n_components]
+            ).astype(
+                np.float32
+            )
+        else:
+            init_data = np.array(init)
+            if len(init_data.shape) == 2:
+                if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
+                    tree = KDTree(init_data)
+                    dist, ind = tree.query(init_data, k=2) # (n, k) distance, index
+                    nndist = np.mean(dist[:, 1]) # this is just a mean value of the second column. WHY second column??
+                    embedding = init_data + random_state.normal(
+                        scale=0.001 * nndist, size=init_data.shape
+                    ).astype(np.float32) # add a noise 
+                else:
+                    embedding = init_data
+
+        epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
+
+        head = graph.row
+        tail = graph.col
+
+        rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random integers
+
+        cost = 0
+        self.batch_epochs = 4
+
+        with open(f'./result/umap_log_fashion.txt', 'a') as log:
+            log.write(f"size\tself.epochs\ttime_taken\tcost\n")
+            log.write(f"{embedding.shape[0]}\t{self.epochs}\t{ts() - time}\t{0}\n")
+
+        while self.epochs < n_epochs:
+            embedding, self.epochs, cost = optimize_layout2(
+                embedding,
+                embedding,
+                graph.data,
+                head,
+                tail,
+                self.epochs,
+                n_epochs,
+                self.batch_epochs,
+                n_vertices,
+                epochs_per_sample,
+                a,
+                b,
+                rng_state,
+                gamma,
+                initial_alpha,
+                negative_sample_rate,
+                verbose=verbose,
+            )
+
+            print(f"size: {embedding.shape[0]},\t eps: {self.epochs},\t time taken: {ts() - time},\t cost: {cost}")
+
+            with open(f'./result/umap_log_fashion.txt', 'a') as log:
+                log.write(f"{embedding.shape[0]}\t{self.epochs}\t{ts() - time}\t{cost}\n")
+
+            if self.epochs %  50 == 0:
+                fig, ax = plt.subplots(1, figsize=(14, 10))
+                plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
+                plt.setp(ax, xticks=[], yticks=[])
+                plt.ylim(-15.0, +15.0)
+                plt.xlim(-15.0, +15.0)
+                cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+                cbar.set_ticks(np.arange(10))
+                cbar.set_ticklabels(item)
+                # plt.title('Fashion MNIST Embedded')
+                plt.savefig(f"./result/{self.epochs}.png")
+
+        return embedding
 
     # PANENE IMPLEMENTATION
     def update_similarity(self, ops, set_op_mix_ratio):
@@ -1973,11 +2219,11 @@ class UMAP(BaseEstimator):
         Parameters
         ----------
         ops: number of ops
-        set_op_mix_ratio: 
+        set_op_mix_ratio: interpolate between (fuzzy) union and intersection
 
         Returns
         -------
-        result: COO formatted adjacency matrix
+        result: COO format matrix (adjacency matrix)
         '''
 
         # run for given number of ops
@@ -1993,22 +2239,23 @@ class UMAP(BaseEstimator):
             if self.epochs > 0:
                 # overwrite random values with 0
                 for j in range(self.n_components):
-                    self.Y[i][j] = 0
+                    self.embedding_[i][j] = 0
 
                 # set their initial points to the mean of its neighbors
                 for k in range(1, self.n_neighbors):
                     for j in range(self.n_components):
                         # issue1: divide by (self.n_neighbors - 1) ?
-                        self.Y[i][j] += self.Y[self.indexes[i][k]][j] / self.n_neighbors
+                        self.embedding_[i][j] += self.embedding_[self.indexes[i][k]][j] / self.n_neighbors
                 # issue2: add random noise after calculation
                 if (updates['addPointResult'] > 0) & (i == self.table.size() - 1):
                     nndist = np.mean(self.distances[:, 1]) # WHY second column?? is this just chosen randomly?
-                    self.Y[self.table.size()-updates['addPointResult']:self.table.size()] += self.random_state.normal(
+                    self.embedding_[self.table.size()-updates['addPointResult']:self.table.size()] += self.random_state.normal(
                         scale=0.001 * nndist, size=[updates['addPointResult'], self.n_components] # scale=0.001? 0.0001?
                     ).astype(np.float32)
 
-        # for i in updatedIds:
-        #     print(f"i: {i}, index: {self.indexes[i]}, distance: {self.distances[i]}, Y[i]: {self.Y[i]}")
+        # if self.verbose:
+        #     for i in updatedIds:
+        #         print(f"i: {i}, index: {self.indexes[i]}, distance: {self.distances[i]}, Y[i]: {self.embedding_[i]}")
 
         '''
         EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
@@ -2025,7 +2272,8 @@ class UMAP(BaseEstimator):
             self.rhos,
             self.sigmas,)
 
-        # print(f"sigmas: {self.sigmas[:self.table.size()]}, rhos: {self.rhos[:self.table.size()]}")
+        # if self.verbose:
+        #     print(f"sigmas: {self.sigmas[:self.table.size()]}, rhos: {self.rhos[:self.table.size()]}")
 
         # compute membership strengths progressively
         self.rows, self.cols, self.vals = progressive_compute_membership_strengths(
@@ -2058,39 +2306,32 @@ class UMAP(BaseEstimator):
 
         result.eliminate_zeros()
 
-        # print(result)
+        # if self.verbose:
+            # print(result)
 
         return result # return COO matrix
 
 
-    def run(self, _X, _y, _item):
+    def run(self, _X, _y, _label, _item):
         '''
         RUN 
         ----------
         Progressively perform UMAP using PANENE's KNN Table
 
         1. initialize KNN Table
-        2. Normalize input data
-        3. (randomly) initialize Y
-        4. run iteration (max_iter)
-            - calculate early exaggeration factor
+        2. (randomly) initialize Y
+        3. run iteration (max_iter)
             - if size < N (left points are waiting to be added)
-                - update similarity matrix (update_similarity())
-            - compute gradient
-            - update gradient
-            - recalculate cost & update Y
+                - update similarity matrix using update_similarity()
+            - compute gradient & update Y
+            - calculate cost (optional)
 
         Parameters
         ----------
-        X: 2D data array
-        N: number of rows
-        D: input dimension
-        Y: embedded output = (n * self.n_components) 2D array
-        self.n_components: output dimension
-        perplexity: a perplexity value (e.g., 2.51)
-        theta: 
-        rand_seed: 
-        max_iter: maximum iteration number
+        _X: high-dimensional input
+        _y: low-dimensional output = (n * self.n_components) 2D array
+        _label: y class (number)
+        _item: y label (character)
 
         Returns
         -------
@@ -2169,7 +2410,7 @@ class UMAP(BaseEstimator):
         self.rhos = np.zeros(self.N, dtype=np.float32)
 
         # initialize random Y value following Uniform distribution
-        self.Y = np.array(self.random_state.uniform(
+        self.embedding_ = np.array(self.random_state.uniform(
             low=-10.0, high=10.0, size=(self.N, self.n_components)
         ).astype(np.float32))
 
@@ -2180,31 +2421,31 @@ class UMAP(BaseEstimator):
         self.cols = np.zeros((self.N * self.n_neighbors), dtype=np.int64)
         self.vals = np.zeros((self.N * self.n_neighbors), dtype=np.float32)
 
-        # For smaller datasets we can use more epochs
+        # For smaller datasets we can run more epochs
         if self.N <= 10000:
-            self.total_epochs = 1000
+            self.n_epochs = 1000
         else:
-            self.total_epochs = 5000
+            self.n_epochs = 5000
 
-        self.epochs = 0
+        # per epochs for save
         save_eps = 100
 
         ###########################
-        self.first_batch_epochs = 50
-        self.second_batch_epochs = 10
+        self.batch_epochs = 50
         self.last_epochs = 200
         self.first_ops = 5000
         self.ops = 300
         ###########################
 
         # run iteration (work progressively)
-        while self.epochs < self.total_epochs:
+        while self.epochs < self.n_epochs:
 
-            if(self.table.size() < self.N):
+            if self.table.size() < self.N:
                 if self.epochs == 0:
                     self._ops = self.first_ops
                 else:
                     self._ops = self.ops
+                    self.batch_epochs = 10
 
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=self._ops, set_op_mix_ratio=1.0)
@@ -2215,12 +2456,14 @@ class UMAP(BaseEstimator):
                     with open(f'./result/log_fashion.txt', 'a') as log:
                         log.write(f"size\tself.epochs\ttime_taken\tcost\n")
                         log.write(f"{self.table.size()}\t{self.epochs}\t{init_time}\t{0}\n")
-            
+            else:
+                self.batch_epochs = 5
+
             self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
             self.graph_.sum_duplicates()
 
             # remove values smaller than the threshold (e.g., 1 / 200)
-            self.graph_.data[self.graph_.data < (self.graph_.data.max() / float(self.total_epochs))] = 0.0
+            self.graph_.data[self.graph_.data < (self.graph_.data.max() / float(self.n_epochs))] = 0.0
             self.graph_.eliminate_zeros()
 
             # head: The indices of the heads of 1-simplices with non-zero membership.
@@ -2228,7 +2471,7 @@ class UMAP(BaseEstimator):
             # tail: The indices of the tails of 1-simplices with non-zero membership.
             tail = self.graph_.col # second index
 
-            epochs_per_sample = make_epochs_per_sample(self.graph_.data, self.total_epochs)
+            epochs_per_sample = make_epochs_per_sample(self.graph_.data, self.n_epochs)
 
             rng_state = self.random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random numbers
 
@@ -2250,19 +2493,19 @@ class UMAP(BaseEstimator):
                 ).astype(
                     np.float32
                 )
-                self.Y[:self.table.size()] = embedding
+                self.embedding_[:self.table.size()] = embedding
 
             # Optimize embedding progressively
             embedding, self.epochs, cost = progressive_optimize_layout(
-                head_embedding=self.Y[:self.table.size()],
-                tail_embedding=self.Y[:self.table.size()],
+                head_embedding=self.embedding_[:self.table.size()],
+                tail_embedding=self.embedding_[:self.table.size()],
+                data=self.graph_.data,
                 head=head,
                 tail=tail,
-                n_epochs=self.epochs,
+                epochs=self.epochs,
                 last_epochs=self.last_epochs,
-                total_epochs=self.total_epochs,
-                first_batch_epochs=self.first_batch_epochs,
-                second_batch_epochs=self.second_batch_epochs,
+                n_epochs=self.n_epochs,
+                batch_epochs=self.batch_epochs,
                 n_vertices = self.graph_.shape[1],
                 epochs_per_sample=epochs_per_sample,
                 a=self._a,
@@ -2271,7 +2514,7 @@ class UMAP(BaseEstimator):
                 verbose=True
             )
 
-            self.Y[:self.table.size()] = embedding
+            self.embedding_[:self.table.size()] = embedding
 
             print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
 
@@ -2280,7 +2523,7 @@ class UMAP(BaseEstimator):
 
             if self.epochs % save_eps == 0:
                 fig, ax = plt.subplots(1, figsize=(14, 10))
-                plt.scatter(*embedding.T, s=0.3, c=_y[:self.table.size()], cmap='Spectral', alpha=1.0)
+                plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
                 plt.setp(ax, xticks=[], yticks=[])
                 plt.ylim(-15.0, +15.0)
                 plt.xlim(-15.0, +15.0)
@@ -2296,7 +2539,7 @@ class UMAP(BaseEstimator):
 
 
     @measure_time
-    def fit_transform(self, X, y, item):
+    def fit_transform(self, X, y, label, item, progressive):
         """Fit X into an embedded space and return that transformed
         output.
 
@@ -2314,12 +2557,15 @@ class UMAP(BaseEstimator):
 
         Returns
         -------
-        X_new : array, shape (n_samples, n_components)
+        embedding_ : array, shape (n_samples, n_components)
             Embedding of the training data in low-dimensional space.
         """
-        self.run(X, y, item)
-        return self.Y[:self.table.size()]
-        # return self.Y
+        if progressive:
+            self.run(X, None, label, item)
+            return self.embedding_[:self.table.size()]
+        else:
+            self.fit(X, None, label, item)
+            return self.embedding_
 
     def transform(self, X):
         """Transform X into the existing embedded space and return that
