@@ -2041,9 +2041,7 @@ class UMAP(BaseEstimator):
                 self.graph_ = reset_local_connectivity(self.graph_)
             
         if self.n_epochs is None:
-            n_epochs = 0
-        else:
-            n_epochs = self.n_epochs
+            self.n_epochs = 0
 
         if self.verbose:
             print(ts(), "Construct embedding")
@@ -2057,7 +2055,6 @@ class UMAP(BaseEstimator):
             self._b,
             self.repulsion_strength,
             self.negative_sample_rate,
-            n_epochs,
             init,
             random_state,
             self.metric,
@@ -2087,7 +2084,6 @@ class UMAP(BaseEstimator):
         b,
         gamma,
         negative_sample_rate,
-        n_epochs,
         init,
         random_state,
         metric,
@@ -2101,14 +2097,14 @@ class UMAP(BaseEstimator):
         graph.sum_duplicates()
         n_vertices = graph.shape[1]
 
-        if n_epochs <= 0:
+        if self.n_epochs <= 0:
             # For smaller datasets we can use more epochs
             if graph.shape[0] <= 10000:
-                n_epochs = 500
+                self.n_epochs = 50000
             else:
-                n_epochs = 5000
+                self.n_epochs = 20000
 
-        graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
+        graph.data[graph.data < (graph.data.max() / float(self.n_epochs))] = 0.0
         graph.eliminate_zeros()
 
         if isinstance(init, str) and init == "random":
@@ -2146,7 +2142,7 @@ class UMAP(BaseEstimator):
                 else:
                     embedding = init_data
 
-        epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
+        epochs_per_sample = make_epochs_per_sample(graph.data, self.n_epochs)
 
         head = graph.row
         tail = graph.col
@@ -2154,13 +2150,13 @@ class UMAP(BaseEstimator):
         rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random integers
 
         cost = 0
-        self.batch_epochs = 4
+        self.batch_epochs = 5
 
-        with open(f'./result/umap_log_fashion.txt', 'a') as log:
+        with open(f'./result/umap/umap_log_fashion.txt', 'a') as log:
             log.write(f"size\tself.epochs\ttime_taken\tcost\n")
             log.write(f"{embedding.shape[0]}\t{self.epochs}\t{ts() - time}\t{0}\n")
 
-        while self.epochs < n_epochs:
+        while self.epochs < self.n_epochs:
             embedding, self.epochs, cost = optimize_layout2(
                 embedding,
                 embedding,
@@ -2168,7 +2164,7 @@ class UMAP(BaseEstimator):
                 head,
                 tail,
                 self.epochs,
-                n_epochs,
+                self.n_epochs,
                 self.batch_epochs,
                 n_vertices,
                 epochs_per_sample,
@@ -2183,20 +2179,24 @@ class UMAP(BaseEstimator):
 
             print(f"size: {embedding.shape[0]},\t eps: {self.epochs},\t time taken: {ts() - time},\t cost: {cost}")
 
-            with open(f'./result/umap_log_fashion.txt', 'a') as log:
+            with open(f'./result/umap/umap_log_fashion.txt', 'a') as log:
                 log.write(f"{embedding.shape[0]}\t{self.epochs}\t{ts() - time}\t{cost}\n")
 
-            if self.epochs %  50 == 0:
-                fig, ax = plt.subplots(1, figsize=(14, 10))
-                plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
-                plt.setp(ax, xticks=[], yticks=[])
-                plt.ylim(-15.0, +15.0)
-                plt.xlim(-15.0, +15.0)
-                cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-                cbar.set_ticks(np.arange(10))
-                cbar.set_ticklabels(item)
-                # plt.title('Fashion MNIST Embedded')
-                plt.savefig(f"./result/{self.epochs}.png")
+            saves = [100, 200, 300, 500, 1000, 2000, 2500]
+
+            if self.epochs in saves:
+                with open(f'./result/umap/{self.epochs}.txt', 'wb') as log:
+                    np.savetxt(log, embedding, delimiter=",")
+                # fig, ax = plt.subplots(1, figsize=(14, 10))
+                # plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
+                # plt.setp(ax, xticks=[], yticks=[])
+                # plt.ylim(-15.0, +15.0)
+                # plt.xlim(-15.0, +15.0)
+                # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+                # cbar.set_ticks(np.arange(10))
+                # cbar.set_ticklabels(item)
+                # # plt.title('Fashion MNIST Embedded')
+                # plt.savefig(f"./result/{self.epochs}.png")
 
         return embedding
 
@@ -2427,14 +2427,12 @@ class UMAP(BaseEstimator):
         else:
             self.n_epochs = 5000
 
-        # per epochs for save
-        save_eps = 100
 
         ###########################
-        self.batch_epochs = 50
+        self.batch_epochs = 40
         self.last_epochs = 200
-        self.first_ops = 5000
-        self.ops = 300
+        self.first_ops = 15000
+        self.ops = 1000
         ###########################
 
         # run iteration (work progressively)
@@ -2445,7 +2443,7 @@ class UMAP(BaseEstimator):
                     self._ops = self.first_ops
                 else:
                     self._ops = self.ops
-                    self.batch_epochs = 10
+                    self.batch_epochs = 4
 
                 # get COO formatted adjacency matrix
                 adj_matrix = self.update_similarity(ops=self._ops, set_op_mix_ratio=1.0)
@@ -2453,11 +2451,11 @@ class UMAP(BaseEstimator):
                 if self.epochs == 0:
                     init_time = ts() - start
                     print(f"Finished initialization: {init_time}")
-                    with open(f'./result/log_fashion.txt', 'a') as log:
+                    with open(f'./result/pumap/log_fashion.txt', 'a') as log:
                         log.write(f"size\tself.epochs\ttime_taken\tcost\n")
                         log.write(f"{self.table.size()}\t{self.epochs}\t{init_time}\t{0}\n")
             else:
-                self.batch_epochs = 5
+                self.batch_epochs = 2
 
             self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
             self.graph_.sum_duplicates()
@@ -2518,20 +2516,28 @@ class UMAP(BaseEstimator):
 
             print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
 
-            with open(f'./result/log_fashion.txt', 'a') as log:
+            with open(f'./result/pumap/log_fashion.txt', 'a') as log:
                 log.write(f"{self.table.size()}\t{self.epochs}\t{ts() - start}\t{cost}\n")
 
-            if self.epochs % save_eps == 0:
-                fig, ax = plt.subplots(1, figsize=(14, 10))
-                plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
-                plt.setp(ax, xticks=[], yticks=[])
-                plt.ylim(-15.0, +15.0)
-                plt.xlim(-15.0, +15.0)
-                cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-                cbar.set_ticks(np.arange(10))
-                cbar.set_ticklabels(_item)
-                # plt.title('Fashion MNIST Embedded')
-                plt.savefig(f"./result/{self.epochs}.png")
+            saves = [100, 200, 300, 500, 1000, 2000, 2500]
+
+        # per epochs for save
+        # save_eps = 100
+            # if self.epochs % save_eps == 0:
+            if self.epochs in saves:
+                with open(f'./result/pumap/{self.epochs}.txt', 'wb') as log:
+                    np.savetxt(log, embedding, delimiter=",")
+
+                # fig, ax = plt.subplots(1, figsize=(14, 10))
+                # plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
+                # plt.setp(ax, xticks=[], yticks=[])
+                # plt.ylim(-15.0, +15.0)
+                # plt.xlim(-15.0, +15.0)
+                # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+                # cbar.set_ticks(np.arange(10))
+                # cbar.set_ticklabels(_item)
+                # # plt.title('Fashion MNIST Embedded')
+                # plt.savefig(f"./result/{self.epochs}.png")
 
         self._input_hash = joblib.hash(self._raw_data)
 
