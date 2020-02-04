@@ -2,7 +2,7 @@ from flask import Flask, render_template
 # from ..umap import umap_panene
 # from ..utils import load_merge_mnist, load_merge_cifar, draw_plot
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='', static_folder='')
 
 @app.route('/')
 def result():
