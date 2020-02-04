@@ -1,0 +1,4 @@
+__pycache__/
+static/result/*
+templates/compare.html
+templates/visualizer.html

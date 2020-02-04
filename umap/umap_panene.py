@@ -2152,7 +2152,7 @@ class UMAP(BaseEstimator):
         cost = 0
         self.batch_epochs = 5
 
-        with open(f'./result/umap/umap_log_fashion.txt', 'a') as log:
+        with open(f'./result/umap/umap_log_fashion.csv', 'a') as log:
             log.write(f"size\tself.epochs\ttime_taken\tcost\n")
             log.write(f"{embedding.shape[0]}\t{self.epochs}\t{ts() - time}\t{0}\n")
 
@@ -2179,13 +2179,13 @@ class UMAP(BaseEstimator):
 
             print(f"size: {embedding.shape[0]},\t eps: {self.epochs},\t time taken: {ts() - time},\t cost: {cost}")
 
-            with open(f'./result/umap/umap_log_fashion.txt', 'a') as log:
+            with open(f'./result/umap/umap_log_fashion.csv', 'a') as log:
                 log.write(f"{embedding.shape[0]}\t{self.epochs}\t{ts() - time}\t{cost}\n")
 
             saves = [100, 200, 300, 500, 1000, 2000, 2500]
 
             if self.epochs in saves:
-                with open(f'./result/umap/{self.epochs}.txt', 'wb') as log:
+                with open(f'./result/umap/{self.epochs}.csv', 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
                 # fig, ax = plt.subplots(1, figsize=(14, 10))
                 # plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
@@ -2427,7 +2427,6 @@ class UMAP(BaseEstimator):
         else:
             self.n_epochs = 5000
 
-
         ###########################
         self.batch_epochs = 40
         self.last_epochs = 200
@@ -2451,7 +2450,7 @@ class UMAP(BaseEstimator):
                 if self.epochs == 0:
                     init_time = ts() - start
                     print(f"Finished initialization: {init_time}")
-                    with open(f'./result/pumap/log_fashion.txt', 'a') as log:
+                    with open(f'./result/pumap/log_fashion.csv', 'a') as log:
                         log.write(f"size\tself.epochs\ttime_taken\tcost\n")
                         log.write(f"{self.table.size()}\t{self.epochs}\t{init_time}\t{0}\n")
             else:
@@ -2516,16 +2515,16 @@ class UMAP(BaseEstimator):
 
             print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
 
-            with open(f'./result/pumap/log_fashion.txt', 'a') as log:
+            with open(f'./result/pumap/log_fashion.csv', 'a') as log:
                 log.write(f"{self.table.size()}\t{self.epochs}\t{ts() - start}\t{cost}\n")
 
             saves = [100, 200, 300, 500, 1000, 2000, 2500]
 
-        # per epochs for save
-        # save_eps = 100
+            # per epochs for save
+            # save_eps = 100
             # if self.epochs % save_eps == 0:
             if self.epochs in saves:
-                with open(f'./result/pumap/{self.epochs}.txt', 'wb') as log:
+                with open(f'./result/pumap/{self.epochs}.csv', 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
 
                 # fig, ax = plt.subplots(1, figsize=(14, 10))

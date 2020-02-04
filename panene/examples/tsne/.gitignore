@@ -1,0 +1,22 @@
+.idea
+*.ipynb
+*.py[oc]
+
+# ignore the C++ binary
+bh_tsne
+
+# ignore data files
+result/*.txt
+*.tsv
+*.dat
+
+bh_tsne
+result_10K
+early_exaggeration
+
+images.sorted.txt
+images.sorted.txt.progressive/
+images.txt
+images.txt.progressive/
+labels.txt
+labels.progressive.txt

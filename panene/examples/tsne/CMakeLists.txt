@@ -1,0 +1,2 @@
+add_subdirectory(bhtsne)
+add_subdirectory(responsive_tsne)

@@ -237,7 +237,7 @@ def nearest_neighbors(
                     metric_kwds["n_features"] = X.shape[1]
             else:
                 raise ValueError(
-                    "Metric {} not supported for sparse " + "data".format(metric)
+                    "Metric {} not supported for sparse data".format(metric)
                 )
             metric_nn_descent = sparse.make_sparse_nn_descent(
                 distance_func, tuple(metric_kwds.values())
@@ -978,8 +978,7 @@ def simplicial_set_embedding(
         if graph.shape[0] <= 10000:
             n_epochs = 500
         else:
-            n_epochs = 20000
-            # n_epochs = 200
+            n_epochs = 200
 
     graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
     graph.eliminate_zeros()
@@ -1045,256 +1044,6 @@ def simplicial_set_embedding(
         verbose=verbose,
     )
     
-    # optimize_end = ts()
-    # print(optimize_end - optimize_start, "OPTIMIZE TIME")
-
-    return embedding
-
-
-@numba.njit(fastmath=True, parallel=True)
-def progressive_optimize_layout(
-    head_embedding,
-    tail_embedding,
-    head,
-    tail,
-    eps,
-    n_epochs,
-    run_epochs,
-    n_vertices,
-    epochs_per_sample,
-    a,
-    b,
-    rng_state,
-    gamma=1.0,
-    initial_alpha=1.0,
-    negative_sample_rate=5.0,
-    verbose=False):
-
-    dim = head_embedding.shape[1]
-    move_other = head_embedding.shape[0] == tail_embedding.shape[0]
-    alpha = initial_alpha
-
-    epochs_per_sample[epochs_per_sample > run_epochs ] = run_epochs
-    epoch_of_next_sample = epochs_per_sample.copy()
-
-    epochs_per_negative_sample = epochs_per_sample / negative_sample_rate
-    epoch_of_next_negative_sample = epochs_per_negative_sample.copy()
-
-    for n in range(run_epochs):
-        alpha = initial_alpha - float(eps) * 0.9 * 100 / float(n_epochs)
-        if alpha < 0.1:
-            alpha = 0.1
-        # alpha = initial_alpha * (1.0 - float(eps) / float(n_epochs))
-
-        if eps >= n_epochs:
-            break
-
-        cost = 0
-        bit_array = [0] * epochs_per_sample.shape[0] # numba does not support bitarray, we use list instead
-
-        for i in range(epochs_per_sample.shape[0]):
-            if epoch_of_next_sample[i] <= n: # loss at 0 epoch because of this
-
-                j = head[i] # first index
-                k = tail[i] # second index
-
-                current = head_embedding[j] # position of j index in embedded space
-                other = tail_embedding[k] # position of k index in embedded space
-
-                dist_squared = rdist(current, other) # if embedding space is 2D (x1-x2)^2 + (y1-y2)^2
-
-                if dist_squared > 0.0: # if they are not the same pts
-                    grad_coeff = -2.0 * a * b * pow(dist_squared, b - 1.0)
-                    grad_coeff /= a * pow(dist_squared, b) + 1.0
-                    if bit_array[i] == 0: # if this edge has not been considered, add this to the cost
-                        c1 = 1.0 / (1.0 + a * pow(dist_squared, 2 * b))
-                        cost -= math.log(c1)
-                else:
-                    grad_coeff = 0.0
-
-                for d in range(dim):
-                    grad_d = clip(grad_coeff * (current[d] - other[d]))
-                    current[d] += grad_d * alpha
-                    if move_other:
-                        other[d] += -grad_d * alpha
-
-                epoch_of_next_sample[i] += epochs_per_sample[i]
-
-                n_neg_samples = int(
-                    (n - epoch_of_next_negative_sample[i])
-                    / epochs_per_negative_sample[i]
-                )
-
-                for p in range(n_neg_samples):
-                    k = tau_rand_int(rng_state) % n_vertices
-
-                    other = tail_embedding[k]
-
-                    dist_squared = rdist(current, other)
-
-                    if dist_squared > 0.0:
-                        grad_coeff = 2.0 * gamma * b
-                        grad_coeff /= (0.001 + dist_squared) * (a * pow(dist_squared, b) + 1)
-                        if bit_array[i] == 0: # the above edge's negative samples are considered, add this to the cost
-                            c2 = a * pow(dist_squared, 2.0 * b) / (1.0 + a * pow(dist_squared, 2.0 * b))
-                            cost -= gamma * math.log(c2)
-                            if p == (n_neg_samples - 1):
-                                bit_array[i] = 1 # this edge will not be considered in this epoch anymore
-                    elif j == k:
-                        continue
-                    else:
-                        grad_coeff = 0.0
-
-                    for d in range(dim):
-                        if grad_coeff > 0.0:
-                            grad_d = clip(grad_coeff * (current[d] - other[d]))
-                        else:
-                            grad_d = 4.0
-                        current[d] += grad_d * alpha
-
-                epoch_of_next_negative_sample[i] += (
-                    n_neg_samples * epochs_per_negative_sample[i]
-                )
-
-        if n != 0:
-            sum_bit_array = 1e-4 # prevent 0 division
-            for l in range(len(bit_array)):
-                sum_bit_array += bit_array[l] # calculate the total number of edges considered in this epoch
-
-            if verbose and n % 50 == 0:
-                print("\tcompleted ", eps, " / ", n_epochs, "epochs\t, cost/sum_bit_array: ", cost / sum_bit_array,
-                    ",\t epochs_per_sample.shape[0]: ", epochs_per_sample.shape[0], ",\t sum_bit_array: ", int(sum_bit_array))
-        eps += 1
-
-    # return head_embedding, eps
-    return head_embedding, eps, cost / sum_bit_array
-
-
-
-@measure_time
-def simplicial_set_embedding2(
-    data,
-    graph,
-    n_components,
-    initial_alpha,
-    a,
-    b,
-    gamma,
-    negative_sample_rate,
-    n_epochs,
-    init,
-    random_state,
-    metric,
-    metric_kwds,
-    verbose,
-    time,
-    label,
-    item):
-
-    graph = graph.tocoo()
-    graph.sum_duplicates()
-    n_vertices = graph.shape[1]
-
-    if n_epochs <= 0:
-        # For smaller datasets we can use more epochs
-        if graph.shape[0] <= 10000:
-            n_epochs = 500
-        else:
-            n_epochs = 20000
-            # n_epochs = 200
-
-    graph.data[graph.data < (graph.data.max() / float(n_epochs))] = 0.0
-    graph.eliminate_zeros()
-
-    if isinstance(init, str) and init == "random":
-        embedding = random_state.uniform(
-            low=-10.0, high=10.0, size=(graph.shape[0], n_components)
-        ).astype(np.float32)
-    elif isinstance(init, str) and init == "spectral":
-        # We add a little noise to avoid local minima for optimization to come
-        initialisation = spectral_layout(
-            data,
-            graph,
-            n_components,
-            random_state,
-            metric=metric,
-            metric_kwds=metric_kwds,
-        )
-        expansion = 10.0 / np.abs(initialisation).max()
-        embedding = (initialisation * expansion).astype(
-            np.float32
-        ) + random_state.normal(
-            scale=0.0001, size=[graph.shape[0], n_components]
-        ).astype(
-            np.float32
-        )
-    else:
-        init_data = np.array(init)
-        if len(init_data.shape) == 2:
-            if np.unique(init_data, axis=0).shape[0] < init_data.shape[0]:
-                tree = KDTree(init_data)
-                dist, ind = tree.query(init_data, k=2) # (n, k) distance, index
-                nndist = np.mean(dist[:, 1]) # this is just a mean value of the second column. WHY second column??
-                embedding = init_data + random_state.normal(
-                    scale=0.001 * nndist, size=init_data.shape
-                ).astype(np.float32) # add a noise 
-            else:
-                embedding = init_data
-
-    epochs_per_sample = make_epochs_per_sample(graph.data, n_epochs)
-
-    head = graph.row
-    tail = graph.col
-
-    rng_state = random_state.randint(INT32_MIN, INT32_MAX, 3).astype(np.int64) # 3 random integers
-
-    eps = 0
-    cost = 0
-    run_epochs = 4
-    # optimize_start = ts()
-
-    with open(f'./result/umap_log_fashion.txt', 'a') as log:
-        log.write(f"size\tself.epochs\ttime_taken\tcost\n")
-        log.write(f"{embedding.shape[0]}\t{eps}\t{ts() - time}\t{0}\n")
-
-    while eps < n_epochs:
-        embedding, eps, cost = progressive_optimize_layout(
-            embedding,
-            embedding,
-            head,
-            tail,
-            eps,
-            n_epochs,
-            run_epochs,
-            n_vertices,
-            epochs_per_sample,
-            a,
-            b,
-            rng_state,
-            gamma,
-            initial_alpha,
-            negative_sample_rate,
-            verbose=verbose,
-        )
-
-        print(f"size: {embedding.shape[0]},\t eps: {eps},\t time taken: {ts() - time},\t cost: {cost}")
-
-        with open(f'./result/umap_log_fashion.txt', 'a') as log:
-            log.write(f"{embedding.shape[0]}\t{eps}\t{ts() - time}\t{cost}\n")
-
-        if eps %  50 == 0:
-            fig, ax = plt.subplots(1, figsize=(14, 10))
-            plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
-            plt.setp(ax, xticks=[], yticks=[])
-            plt.ylim(-15.0, +15.0)
-            plt.xlim(-15.0, +15.0)
-            cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-            cbar.set_ticks(np.arange(10))
-            cbar.set_ticklabels(item)
-            # plt.title('Fashion MNIST Embedded')
-            plt.savefig(f"./result/{eps}.png")
-
-
     # optimize_end = ts()
     # print(optimize_end - optimize_start, "OPTIMIZE TIME")
 
@@ -1610,7 +1359,7 @@ class UMAP(BaseEstimator):
         ):
             raise ValueError("n_epochs must be a positive integer " "larger than 10")
 
-    def fit(self, X, y, label, item):
+    def fit(self, X, y):
         """Fit X into an embedded space.
 
         Optionally use y for supervised dimension reduction.
@@ -1852,7 +1601,7 @@ class UMAP(BaseEstimator):
             # embed_start = ts()
             print(ts(), "Construct embedding")
 
-        self.embedding_ = simplicial_set_embedding2(
+        self.embedding_ = simplicial_set_embedding(
             self._raw_data,
             self.graph_,
             self.n_components,
@@ -1867,9 +1616,6 @@ class UMAP(BaseEstimator):
             self.metric,
             self._metric_kwds,
             self.verbose,
-            self.start,
-            label,
-            item,
         )
 
         if self.verbose:
@@ -1891,7 +1637,7 @@ class UMAP(BaseEstimator):
         return self
 
     @measure_time
-    def fit_transform(self, X, y, label, item):
+    def fit_transform(self, X, y=None):
         """Fit X into an embedded space and return that transformed
         output.
 
@@ -1912,7 +1658,7 @@ class UMAP(BaseEstimator):
         X_new : array, shape (n_samples, n_components)
             Embedding of the training data in low-dimensional space.
         """
-        self.fit(X, None, label, item)
+        self.fit(X, y)
         return self.embedding_
 
     def transform(self, X):
