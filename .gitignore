@@ -5,4 +5,3 @@ data/mnist
 data/fashion
 data/google
 .vscode/
-result/

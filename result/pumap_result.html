@@ -1,0 +1,135 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Progressive UMAP and UMAP Result Visualization</title>
+  <style>
+    td { padding:10px; }
+  </style>
+</head>
+<body>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+
+  <table>
+    <tr>
+      <td class="header">
+        <h1>
+          Progressive
+          <br>
+          UMAP
+        </h1>
+        <p>
+          Initialization
+          <!-- <br><span style="font-size:0.8em">(<span id="ori-time"></span>s)</span> -->
+        </p>
+      </td>
+      <td><svg id="pumap1"></svg></td>
+      <td><svg id="pumap2"></svg></td>
+      <td><svg id="pumap3"></svg></td>
+      <!-- <td><svg id="pumap4"></svg></td> -->
+    </tr>
+    <!-- <tr>
+      <td class="header">
+        <h1>
+          UMAP
+        </h1>
+        <p>
+          Neighbor
+          <br>
+          Computation
+          <br><span style="font-size:0.8em">(<span id="ori-time"></span>s)</span>
+        </p>
+      </td>
+      <td><svg id="umap1"></svg></td>
+      <td><svg id="umap2"></svg></td>
+      <td><svg id="umap3"></svg></td>
+      <td><svg id="umap4"></svg></td>
+    </tr> -->
+  </table>
+
+  <script>
+
+  // csv -> array
+  function read_csv(url) {
+    let request = new XMLHttpRequest();  
+    request.open("GET", url, false);   
+    request.send(null);  
+
+    let csvData = new Array();
+    let jsonObject = request.responseText.split(/\r?\n|\r/);
+    for (let i = 0; i < jsonObject.length; i++) {
+      csvData.push(jsonObject[i].split(','));
+    }
+    return csvData
+  }
+  
+  function translate(x, y) { return 'translate(' + x + ',' + y + ')'; }
+
+  let labels = read_csv("fashion/y.csv")
+
+  function draw(svgId, path, labels) {
+    d3.text(path, (data) => {
+      let margin = { top: 20, right: 20, bottom: 20, left: 20 };
+      let width = 340, height = 340;
+
+      data = "x1,x2\n" + data;  //now you have the header
+      data = d3.csvParse(data)
+
+      // convert all values into numbers
+      data.forEach(function(d) {
+        d.x1 = +d.x1;
+        d.x2 = +d.x2;
+      });
+
+      let svg = d3.select(svgId)
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom)
+        .append('g')
+        .attr('transform', translate(10, 10))
+
+      let x = d3.scaleLinear()
+        .domain(d3.extent(data, d => d.x1))
+        .range([0, width])
+
+      let y = d3.scaleLinear()
+        .domain(d3.extent(data, d => d.x2))
+        .range([0, height])
+
+      let color = d3.scaleOrdinal()
+        .domain(labels)
+        .range(d3.schemeCategory10);
+
+      svg.append('g')
+        .selectAll('circle')
+        .data(data)
+        .enter()
+        .append('circle')
+          .attr('r', 1.5)
+          .style('fill', (d, i) => color(labels[i]))
+          .attr('stroke', 'black')
+          .attr('stroke-width', '0.3px')
+          .attr('cx', d => x(d.x1))
+          .attr('cy', d => y(d.x2))
+          .attr('opacity', 0.7)
+
+      svg.append('text')
+        .text('Loss by Time')
+        .attr('text-anchor', 'middle')
+        .attr('dy', '0.71em')
+        .attr('font-style', 'italic')
+        .attr('transform', translate(100, 350))
+    })
+  }
+
+  draw('#pumap1', 'fashion/pumap/100.csv', labels)
+  draw('#pumap2', 'fashion/pumap/200.csv', labels)
+  draw('#pumap3', 'fashion/pumap/300.csv', labels)
+  draw('#pumap4', 'fashion/pumap/500.csv', labels)
+  draw('#umap1', 'fashion/umap/100.csv', labels)
+  draw('#umap2', 'fashion/umap/200.csv', labels)
+  draw('#umap3', 'fashion/umap/300.csv', labels)
+  draw('#umap4', 'fashion/umap/500.csv', labels)
+
+  </script>
+</body>
