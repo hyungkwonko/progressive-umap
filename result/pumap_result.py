@@ -2,8 +2,6 @@ from flask import Flask, render_template
 # from ..umap import umap_panene
 # from ..utils import load_merge_mnist, load_merge_cifar, draw_plot
 
-import pandas as pd
-
 app = Flask(__name__, template_folder='', static_folder='')
 
 @app.route('/')
@@ -15,10 +13,7 @@ def result():
     # draw_plot(embedding, y, item, "myimage")
     # print("image saved")
 
-    ddd = pd.read_csv("result/fashion/y.csv")
-    
-
-    return render_template('pumap_result.html', data=ddd)
+    return render_template('pumap_result.html')
     
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True) # FLASK_APP=app.py python -m flask run
