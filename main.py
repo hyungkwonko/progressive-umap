@@ -5,7 +5,7 @@ if __name__ == "__main__":
 
   x, y = load_merge_mnist()
   item = ["T-shirt/top", "Trouser", "Pullover", "Dress", "Coat", "Sandal", "Shirt", "Sneaker", "Bag", "Ankle boot"]
-  umap_panene.UMAP(n_neighbors=5).fit_transform(X=x, y=None, label=y, item=item, progressive=False)
+  umap_panene.UMAP(n_neighbors=5, random_state=5).fit_transform(X=x, y=None, label=y, item=item, progressive=True)
   
   # x2, y2 = load_merge_cifar()
   # item2 = ["airplane", "automobile", "bird", "cat", "deer", "dog", "frog", "horse", "ship", "truck"]

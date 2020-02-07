@@ -6,42 +6,29 @@
   <title>Result Visualization</title>
   <style>
     h1 {
+      font-family: sans-serif;
       font-size: 3.0em;
       text-align: center;
     }
     td {
       text-align: center;
-      padding-bottom: 20px;
+      padding: 30px 0;
     }
     td > h2 {
-      font-size: 2.0em;
+      font-family: Helvetica;
+      font-size: 3.0em;
     }
     td > p {
+      font-family: Helvetica;
       text-align: center;
       align-items: center;
-      font-size: 1.2em; 
+      font-size: 1.6em; 
     }
   </style>
 </head>
 <body>
   <script src="https://d3js.org/d3.v4.min.js"></script>
-  <h1><em>Progressive UMAP and UMAP Result Visualization</em></h1>
   <table>
-    <tr>
-      <td class="header">
-        <h2>Progressive<br>UMAP</h2>
-        <p>
-          Initialization
-          <br>
-          <span style="font-size:0.8em">(<span id="pumap_init"></span>s)</span>
-        </p>
-      </td>
-      <td><svg id="pumap100"></svg></td>
-      <td><svg id="pumap200"></svg></td>
-      <td><svg id="pumap300"></svg></td>
-      <td><svg id="pumap500"></svg></td>
-      <td><svg id="pumap_label"></svg></td>
-    </tr>
     <tr>
       <td class="header">
         <h2>
@@ -58,6 +45,21 @@
       <td><svg id="umap200"></svg></td>
       <td><svg id="umap300"></svg></td>
       <td><svg id="umap500"></svg></td>
+      <td><svg id="umap_label"></svg></td>
+    </tr>
+    <tr>
+      <td class="header">
+        <h2>Progressive<br>UMAP</h2>
+        <p>
+          Initialization
+          <br>
+          <span style="font-size:0.8em">(<span id="pumap_init"></span>s)</span>
+        </p>
+      </td>
+      <td><svg id="pumap100"></svg></td>
+      <td><svg id="pumap200"></svg></td>
+      <td><svg id="pumap300"></svg></td>
+      <td><svg id="pumap500"></svg></td>
     </tr>
   </table>
 
@@ -68,9 +70,9 @@
   let pumap_chart = read_csv("fashion/pumap/log_fashion.csv")
   let umap_chart = read_csv("fashion/umap/log_fashion.csv")
 
-  let margin = { top: 20, right: 20, bottom: 20, left: 20 };
-  let legend_margin = { rect_size: 15, spacing: 5, margin: 60 };
-  let width = 340, height = 340;
+  let margin = { top: 20, right: 20, bottom: 40, left: 20 };
+  let legend_margin = { rect_size: 20, spacing: 5, margin: 60 };
+  let width = 310, height = 320;
 
   // csv -> array
   function read_csv(path) {
@@ -89,9 +91,8 @@
   function draw_init(svgId, path) {
     plog = read_csv(path) // size, self.epochs, time_taken, cost
     let obj = plog.find(o => o[1] == 0);
-
     d3.select(svgId)
-      .text(obj[2].substring(2,10))
+      .text(d3.format(',.1f')(+obj[2]))
   }
 
   function translate(x, y) { return 'translate(' + x + ',' + y + ')'; }
@@ -175,6 +176,8 @@
       legend.append('text')
         .attr('x', legend_margin.rect_size + legend_margin.spacing)
         .attr('y', legend_margin.rect_size)
+        .style('font-size', '1.2em')
+        .style('font-family', 'Helvetica')
         .text(d => Object.values(labels_code)[parseInt(d)].code);
   }
 
@@ -183,7 +186,7 @@
     let label_height = 40;
     let numpts = +row[0];
     let iter = +row[1];
-    let time = row[2].substring(2,10);
+    let time = +row[2];
     let error = +row[3];
 
     let svg = d3.select(svgId)
@@ -193,17 +196,19 @@
     let te = svg.append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '-0.6em')
-      .style('font-size', '1.25em')
+      .style('font-size', '2.25em')
       .style('font-weight', 700)
-      .attr('transform', translate(width / 2, height + label_height - 10))
+      .style('font-family', 'Helvetica')
+      .attr('transform', translate(width / 2, height + label_height + 12))
       .text('Iteration #' + (+iter))
       
     let te2 = svg.append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '-0.6em')
-      .style('font-size', '0.9em')
-      .attr('transform', translate(width / 2, height + label_height + 5))
-      .text('(' + time + 's, error=' + d3.format('.2f')(error) + ', ' + numpts + 'pts)')
+      .style('font-size', '1.2em')
+      .style('font-family', 'Helvetica')
+      .attr('transform', translate(width / 2, height + label_height + 28))
+      .text('(' + d3.format(',.1f')(time) + 's, error=' + d3.format('.2f')(error) + ', ' + numpts + 'pts)')
 
   }
 
@@ -247,7 +252,8 @@
   draw_error('#umap300', umap_row300)
   draw_error('#umap500', umap_row500)
 
-  draw_legend('#pumap_label', labels, labels_code)
+  draw_legend('#umap_label', labels, labels_code)
 
   </script>
+
 </body>

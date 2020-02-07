@@ -2152,9 +2152,11 @@ class UMAP(BaseEstimator):
         cost = 0
         self.batch_epochs = 5
 
+        time_taken = ts() - time
+
         with open(f'./result/fashion/umap/log_fashion.csv', 'a') as log:
             log.write(f"size,self.epochs,time_taken,cost\n")
-            log.write(f"{embedding.shape[0]},{self.epochs},{ts() - time},{0}\n")
+            log.write(f"{embedding.shape[0]},{self.epochs},{time_taken.total_seconds()},{0}\n")
 
         while self.epochs < self.n_epochs:
             embedding, self.epochs, cost = optimize_layout2(
@@ -2177,16 +2179,18 @@ class UMAP(BaseEstimator):
                 verbose=verbose,
             )
 
-            print(f"size: {embedding.shape[0]},\t eps: {self.epochs},\t time taken: {ts() - time},\t cost: {cost}")
+            time_taken = ts() - time
+            print(f"size: {embedding.shape[0]},\t eps: {self.epochs},\t time taken: {time_taken.total_seconds()},\t cost: {cost}")
 
             with open(f'./result/fashion/umap/log_fashion.csv', 'a') as log:
-                log.write(f"{embedding.shape[0]},{self.epochs},{ts() - time},{cost}\n")
+                log.write(f"{embedding.shape[0]},{self.epochs},{time_taken.total_seconds()},{cost}\n")
 
             saves = [100, 200, 300, 500, 1000, 2000, 2500]
 
             if self.epochs in saves:
                 with open(f'./result/fashion/umap/{self.epochs}.csv', 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
+
                 # fig, ax = plt.subplots(1, figsize=(14, 10))
                 # plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
                 # plt.setp(ax, xticks=[], yticks=[])
@@ -2449,10 +2453,10 @@ class UMAP(BaseEstimator):
                 self.graph_ = adj_matrix
                 if self.epochs == 0:
                     init_time = ts() - start
-                    print(f"Finished initialization: {init_time}")
+                    print(f"Finished initialization: {init_time.total_seconds()}")
                     with open(f'./result/fashion/pumap/log_fashion.csv', 'a') as log:
                         log.write(f"size,self.epochs,time_taken,cost\n")
-                        log.write(f"{self.table.size()},{self.epochs},{init_time},{0}\n")
+                        log.write(f"{self.table.size()},{self.epochs},{init_time.total_seconds()},{0}\n")
             else:
                 self.batch_epochs = 2
 
@@ -2513,10 +2517,11 @@ class UMAP(BaseEstimator):
 
             self.embedding_[:self.table.size()] = embedding
 
-            print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {ts() - start},\t cost: {cost}")
+            time_taken = ts() - start
+            print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {time_taken.total_seconds()},\t cost: {cost}")
 
             with open(f'./result/fashion/pumap/log_fashion.csv', 'a') as log:
-                log.write(f"{self.table.size()},{self.epochs},{ts() - start},{cost}\n")
+                log.write(f"{self.table.size()},{self.epochs},{time_taken.total_seconds()},{cost}\n")
 
             saves = [100, 200, 300, 500, 1000, 2000, 2500]
 
