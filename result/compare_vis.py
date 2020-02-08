@@ -13,7 +13,7 @@ def result():
     # draw_plot(embedding, y, item, "myimage")
     # print("image saved")
 
-    return render_template('pumap_result.html')
+    return render_template('compare_vis.html')
     
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True) # FLASK_APP=app.py python -m flask run

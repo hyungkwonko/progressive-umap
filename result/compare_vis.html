@@ -123,7 +123,8 @@
 
       let color = d3.scaleOrdinal()
         .domain(labels)
-        .range(d3.schemeCategory10);
+        .range(["#4e79a7","#f28e2c","#e15759","#76b7b2","#59a14f","#edc949","#af7aa1","#ff9da7","#9c755f","#bab0ab"]);
+        // .range(d3.schemeCategory10);
 
       svg.append('g')
         .selectAll('circle')
@@ -133,10 +134,9 @@
           .attr('r', 1.5)
           .style('fill', (d, i) => color(labels[i]))
           .attr('stroke', 'black')
-          .attr('stroke-width', '0.05px')
+          .attr('stroke-width', '0.03px')
           .attr('cx', d => x(d.x1))
           .attr('cy', d => y(d.x2))
-          .attr('opacity', 1.0)
     })
   }
 
@@ -146,7 +146,8 @@
 
     let color = d3.scaleOrdinal()
         .domain(labels)
-        .range(d3.schemeCategory10);
+        .range(["#4e79a7","#f28e2c","#e15759","#76b7b2","#59a14f","#edc949","#af7aa1","#ff9da7","#9c755f","#bab0ab"]);
+        // .range(d3.schemeCategory10);
 
     let svg = d3.select(svgId)
       .attr('width', legend_width + margin.left + margin.right)

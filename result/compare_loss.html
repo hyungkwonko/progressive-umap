@@ -1,0 +1,257 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loss Comparison</title>
+</head>
+<body>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+
+  <div id="error" style="padding: 10px 0"></div>
+
+  <script>
+
+    let charts = ["fashion/umap/log_fashion.csv", "fashion/pumap/log_fashion.csv"]
+
+    function translate(x, y) { return 'translate(' + x + ',' + y + ')'; }
+    
+    // set the dimensions and margins of the graph
+    let margin = { top: 10, right: 30, bottom: 50, left: 60 },
+      width = 560 - margin.left - margin.right,
+      height = 500 - margin.top - margin.bottom;
+    
+    let epochs = ['100', '200', '500'];
+
+    draw_chart("#error", charts)
+
+    function draw_chart(id, urls) {
+      let svg = d3.select(id)
+        .append("svg")
+          .attr("width", width + margin.left + margin.right)
+          .attr("height", height + margin.top + margin.bottom)
+        .append("g")
+          .attr("transform", translate(margin.left, margin.top));
+
+      // svg.append("text")
+      //   .attr("x", (width / 2))             
+      //   .attr("y", 0 - (margin.top / 2))
+      //   .attr("text-anchor", "middle")
+      //   .style("font-size", "25px")
+      //   .style("font-family", "Helvetica")
+      //   .style("text-decoration", "underline")  
+      //   .text("UMAP vs. PUMAP loss per time");
+
+      d3.csv(urls[0], function(err, data) {
+
+        // convert all values into numbers
+        data.forEach(function(d) {
+          d.time_taken = +d.time_taken;
+          d.cost = +d.cost;
+        });
+
+        // remove one where cost == 0
+        const index = data.findIndex(x => x.cost === 0);
+        if (index !== undefined) data.splice(index, 1);
+
+        let new_data = [];
+        data.forEach(e => {
+          if(e.time_taken < 120)
+            new_data.push(e)
+        });
+        data = new_data;
+        
+        let targets = [];
+        new_data.forEach(e => {
+          if(epochs.includes(e['self.epochs'])) 
+            targets.push(e)
+        });
+
+        let x = d3.scaleLinear()
+          .domain([0, d3.max(data, d => d.time_taken)])
+          .range([0, width]);
+        
+        let y = d3.scaleLinear()
+          .domain([0, d3.max(data, d => d.cost)])
+          .range([height, 0]);
+
+        svg.append("g")
+          .attr("transform", translate(0, height))
+          .call(d3.axisBottom(x))
+          .style("font-size", "15px");
+
+        svg.append("g")
+          .call(d3.axisLeft(y))
+          .style("font-size", "15px");
+
+        // text label
+        svg.append("text")
+          .attr("transform", translate(width/2, height + margin.bottom))
+          .style("text-anchor", "middle")
+          .text("Time (s)")
+          .style("font-family", "Helvetica")
+          .style('font-style', 'italic')
+          .style("font-size", "18px");
+
+        svg.append("text")
+          .attr("transform", "rotate(-90)")
+          .attr("y", 0 - margin.left)
+          .attr("x", 0 - (height / 2))
+          .attr("dy", "1em")
+          .style("text-anchor", "middle")
+          .style("font-family", "Helvetica")
+          .style('font-style', 'italic')
+          .style("font-size", "18px")
+          .text("Loss");      
+
+        // Add the line
+        svg.append("path")
+          .datum(data)
+          .attr("fill", "none")
+          .attr("stroke", "steelblue")
+          .attr("stroke-width", 1.5)
+          .attr("d", d3.line()
+            .x(d => x(d.time_taken))
+            .y(d => y(d.cost))
+          )
+
+        targets.forEach(target => {
+          let target_epoch = target['self.epochs']
+          let target_time = target['time_taken']
+          let target_cost = target['cost']
+
+          svg.append('line')
+            .attr('x1', 0)
+            .attr('y1', -10)
+            .attr('x2', 0)
+            .attr('y2', 10)
+            .attr('stroke', '#333')            
+            .attr('stroke-width', '2px')
+            .attr('transform', translate(x(target_time), y(target_cost)))
+
+          svg.append('text')
+            .text('Iter #' + target_epoch)
+            .style('font-size', '0.9em')
+            .attr('dy', '1.5em')
+            .attr('dx', '-2.2em')
+            .attr('transform', translate(x(target_time), y(target_cost)))
+            
+        })
+
+        d3.csv(urls[1], function(err, data2) {
+
+          // convert all values into numbers
+          data2.forEach(function(d) {
+            d.time_taken = +d.time_taken;
+            d.cost = +d.cost;
+          });
+
+          let new_data2 = [];
+          data2.forEach(e => {
+            if(e.time_taken < 120)
+              new_data2.push(e)
+          });
+          data2 = new_data2;
+
+          let targets2 = [];
+          new_data2.forEach(e => {
+            if(epochs.includes(e['self.epochs'])) 
+              targets2.push(e)
+          });
+
+          // remove one where cost == 0
+          const index = data2.findIndex(x => x.cost === 0);
+          if (index !== undefined) data2.splice(index, 1);
+
+          let x2 = d3.scaleLinear()
+            .domain([0, d3.max(data2, d => d.time_taken)])
+            .range([0, width]);
+
+          // Add the line
+          svg.append("path")
+            .datum(data2)
+            .attr("fill", "none")
+            .attr("stroke", "red")
+            .attr("stroke-width", 1.5)
+            .attr("d", d3.line()
+              .x(d => x2(d.time_taken))
+              .y(d => y(d.cost))
+              )
+
+          targets2.forEach(target => {
+            let target_epoch = target['self.epochs']
+            let target_time = target['time_taken']
+            let target_cost = target['cost']
+
+            svg.append('line')
+              .attr('x1', 0)
+              .attr('y1', -10)
+              .attr('x2', 0)
+              .attr('y2', 10)
+              .attr('stroke', '#333')            
+              .attr('stroke-width', '2px')
+              .attr('transform', translate(x2(target_time), y(target_cost)))
+
+            svg.append('text')
+              .text('Iter #' + target_epoch)
+              .style('font-size', '0.9em')
+              .attr('dy', '1.5em')
+              .attr('dx', '-2.2em')
+              .attr('transform', translate(x2(target_time), y(target_cost)))
+              
+          })
+        })
+
+        // legend
+        let legend_keys = ["UMAP", "PUMAP"]
+        let legend_color = ["steelblue", "red"]
+
+        let legend = d3.selectAll('svg')
+          .append('g')
+          .attr('transform', translate(width - 130, 100))
+
+        legend.append('rect')
+          .attr('stroke', 'black')
+          .attr('stroke-width', '1.5px')
+          .attr('fill', 'none')
+          .style('shape-rendering', 'crispEdges')
+          .attr('width', '150px')
+          .attr('height', '60px')
+        
+        legend.append('g').attr('transform', translate(15, 15))
+          .append('line')
+          .attr('x1', 0)
+          .attr('y1', 0)
+          .attr('x2', 30)
+          .attr('y2', 0)
+          .attr('stroke', legend_color[0])
+          .attr('stroke-width', '2px')
+
+        legend.append('g').attr('transform', translate(35, 15))
+          .append('text')
+          .attr('dy', '0.3em')
+          .attr('dx', '25px')
+          .style('font-size', '1.2em')
+          .style('font-family', 'Helvetica')
+          .text(legend_keys[0])
+
+        legend.append('g').attr('transform', translate(15, 45))
+          .append('line')
+          .attr('x1', 0)
+          .attr('y1', 0)
+          .attr('x2', 30)
+          .attr('y2', 0)
+          .attr('stroke', legend_color[1])
+          .attr('stroke-width', '2px')
+
+        legend.append('g').attr('transform', translate(35, 45))
+          .append('text')
+          .attr('dy', '0.3em')
+          .attr('dx', '25px')
+          .style('font-size', '1.2em')
+          .style('font-family', 'Helvetica')
+          .text(legend_keys[1])
+      })
+    }
+  </script>
+</body>
+</html>
