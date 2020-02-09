@@ -9,3 +9,11 @@ cifar-10/test_batch
 mnist/*.gz
 fashion/*.gz
 google/
+kuzushiji/*.npz
+kuzushiji/*.csv
+kuzushiji49/*.npz
+kuzushiji49/*.csv
+coil20/*.zip
+coil20/coil-20-proc/*
+coil100/*.zip
+coil100/coil-100/*

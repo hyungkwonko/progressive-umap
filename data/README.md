@@ -32,3 +32,17 @@ Further information on each dataset can be found in the websites listed below.
 
 ### WORD VECTOR, dimension = (3M, 300), 3.35GB
 `https://www.kaggle.com/sandreds/googlenewsvectorsnegative300`
+
+### Kuzushiji-MNIST
+Kuzushiji-MNIST: (28x28 grayscale, 70,000 images, 10 classes)
+
+Kuzushiji-49: (28x28 grayscale, 270,912 images, 49 classes)
+
+`https://github.com/rois-codh/kmnist`
+
+
+### COIL 20
+`http://www.cs.columbia.edu/CAVE/software/softlib/coil-20.php`
+
+### COIL 100
+`http://www.cs.columbia.edu/CAVE/software/softlib/coil-100.php`

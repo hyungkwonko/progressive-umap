@@ -44,6 +44,8 @@ from pynene import KNNTable
 import math
 
 from matplotlib import pyplot as plt
+import os
+import pathlib
 
 locale.setlocale(locale.LC_NUMERIC, "C")
 
@@ -1815,7 +1817,7 @@ class UMAP(BaseEstimator):
             raise ValueError("first_ops must be positive and bigger than ops")
 
     # def fit(self, X, y=None):
-    def fit(self, X, y, label, item):
+    def fit(self, X, y, label, dname):
         """Fit X into an embedded space.
 
         Optionally use y for supervised dimension reduction.
@@ -2062,7 +2064,7 @@ class UMAP(BaseEstimator):
             self.verbose,
             self.start,
             label,
-            item,
+            dname,
         )
 
         if self.verbose:
@@ -2091,7 +2093,7 @@ class UMAP(BaseEstimator):
         verbose,
         time,
         label,
-        item):
+        dname):
 
         graph = graph.tocoo()
         graph.sum_duplicates()
@@ -2154,8 +2156,11 @@ class UMAP(BaseEstimator):
 
         time_taken = ts() - time
 
+        # mkdir if it does not exist
+        pathlib.Path(os.path.join(os.getcwd(), 'result', dname, 'umap')).mkdir(parents=True, exist_ok=True)
+
         with open(f'./result/fashion/umap/log_fashion.csv', 'a') as log:
-            log.write(f"size,self.epochs,time_taken,cost\n")
+            log.write(f"size,epochs,time_taken,cost\n")
             log.write(f"{embedding.shape[0]},{self.epochs},{time_taken.total_seconds()},{0}\n")
 
         while self.epochs < self.n_epochs:
@@ -2182,25 +2187,25 @@ class UMAP(BaseEstimator):
             time_taken = ts() - time
             print(f"size: {embedding.shape[0]},\t eps: {self.epochs},\t time taken: {time_taken.total_seconds()},\t cost: {cost}")
 
-            with open(f'./result/fashion/umap/log_fashion.csv', 'a') as log:
+            with open(os.path.join(os.getcwd(), 'result', dname, 'umap', 'log_fashion.csv'), 'a') as log:
                 log.write(f"{embedding.shape[0]},{self.epochs},{time_taken.total_seconds()},{cost}\n")
 
             saves = [100, 200, 300, 500, 1000, 2000, 2500]
 
             if self.epochs in saves:
-                with open(f'./result/fashion/umap/{self.epochs}.csv', 'wb') as log:
+                with open(os.path.join(os.getcwd(), 'result', dname, 'umap', f'{self.epochs}.csv'), 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
 
-                # fig, ax = plt.subplots(1, figsize=(14, 10))
-                # plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
-                # plt.setp(ax, xticks=[], yticks=[])
-                # plt.ylim(-15.0, +15.0)
-                # plt.xlim(-15.0, +15.0)
+                fig, ax = plt.subplots(1, figsize=(10, 10))
+                plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
+                plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
+                plt.ylim(-15.0, +15.0)
+                plt.xlim(-15.0, +15.0)
                 # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
                 # cbar.set_ticks(np.arange(10))
-                # cbar.set_ticklabels(item)
-                # # plt.title('Fashion MNIST Embedded')
-                # plt.savefig(f"./result/{self.epochs}.png")
+                # cbar.set_ticklabels(_item)
+                # plt.title('Fashion MNIST Embedded')
+                plt.savefig(os.path.join(os.getcwd(), 'result', dname, 'umap', f'{self.epochs}.png'))
 
         return embedding
 
@@ -2316,7 +2321,7 @@ class UMAP(BaseEstimator):
         return result # return COO matrix
 
 
-    def run(self, _X, _y, _label, _item):
+    def run(self, _X, _y, _label, _dname):
         '''
         RUN 
         ----------
@@ -2335,7 +2340,7 @@ class UMAP(BaseEstimator):
         _X: high-dimensional input
         _y: low-dimensional output = (n * self.n_components) 2D array
         _label: y class (number)
-        _item: y label (character)
+        _dname: dataset name (character)
 
         Returns
         -------
@@ -2438,6 +2443,9 @@ class UMAP(BaseEstimator):
         self.ops = 1000
         ###########################
 
+        # mkdir if it does not exist
+        pathlib.Path(os.path.join(os.getcwd(), 'result', _dname, 'pumap')).mkdir(parents=True, exist_ok=True)
+
         # run iteration (work progressively)
         while self.epochs < self.n_epochs:
 
@@ -2454,8 +2462,8 @@ class UMAP(BaseEstimator):
                 if self.epochs == 0:
                     init_time = ts() - start
                     print(f"Finished initialization: {init_time.total_seconds()}")
-                    with open(f'./result/fashion/pumap/log_fashion.csv', 'a') as log:
-                        log.write(f"size,self.epochs,time_taken,cost\n")
+                    with open(os.path.join(os.getcwd(), 'result', _dname, 'pumap', 'log_fashion.csv'), 'a') as log:
+                        log.write(f"size,epochs,time_taken,cost\n")
                         log.write(f"{self.table.size()},{self.epochs},{init_time.total_seconds()},{0}\n")
             else:
                 self.batch_epochs = 2
@@ -2520,7 +2528,7 @@ class UMAP(BaseEstimator):
             time_taken = ts() - start
             print(f"size: {self.table.size()},\t eps: {self.epochs},\t time taken: {time_taken.total_seconds()},\t cost: {cost}")
 
-            with open(f'./result/fashion/pumap/log_fashion.csv', 'a') as log:
+            with open(os.path.join(os.getcwd(), 'result', _dname, 'pumap', 'log_fashion.csv'), 'a') as log:
                 log.write(f"{self.table.size()},{self.epochs},{time_taken.total_seconds()},{cost}\n")
 
             saves = [100, 200, 300, 500, 1000, 2000, 2500]
@@ -2529,19 +2537,19 @@ class UMAP(BaseEstimator):
             # save_eps = 100
             # if self.epochs % save_eps == 0:
             if self.epochs in saves:
-                with open(f'./result/fashion/pumap/{self.epochs}.csv', 'wb') as log:
+                with open(os.path.join(os.getcwd(), 'result', _dname, 'pumap', f'{self.epochs}.csv'), 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
 
-                # fig, ax = plt.subplots(1, figsize=(14, 10))
-                # plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
-                # plt.setp(ax, xticks=[], yticks=[])
-                # plt.ylim(-15.0, +15.0)
-                # plt.xlim(-15.0, +15.0)
+                fig, ax = plt.subplots(1, figsize=(10, 10))
+                plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
+                plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
+                plt.ylim(-15.0, +15.0)
+                plt.xlim(-15.0, +15.0)
                 # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
                 # cbar.set_ticks(np.arange(10))
                 # cbar.set_ticklabels(_item)
-                # # plt.title('Fashion MNIST Embedded')
-                # plt.savefig(f"./result/{self.epochs}.png")
+                # plt.title('Fashion MNIST Embedded')
+                plt.savefig(os.path.join(os.getcwd(), 'result', _dname, 'pumap', f'{self.epochs}.png'))
 
         self._input_hash = joblib.hash(self._raw_data)
 
@@ -2549,7 +2557,7 @@ class UMAP(BaseEstimator):
 
 
     @measure_time
-    def fit_transform(self, X, y, label, item, progressive):
+    def fit_transform(self, X, y, label, dname, progressive):
         """Fit X into an embedded space and return that transformed
         output.
 
@@ -2571,10 +2579,10 @@ class UMAP(BaseEstimator):
             Embedding of the training data in low-dimensional space.
         """
         if progressive:
-            self.run(X, None, label, item)
+            self.run(X, None, label, dname)
             return self.embedding_[:self.table.size()]
         else:
-            self.fit(X, None, label, item)
+            self.fit(X, None, label, dname)
             return self.embedding_
 
     def transform(self, X):
