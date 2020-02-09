@@ -1,5 +1,5 @@
 remove=$1
-if [ "$remove" = true ]; then
+if [ "$remove" = "remove" ]; then
   echo "Removing Fashion MNIST Dataset..."
   rm *.gz
   echo "Removed!"

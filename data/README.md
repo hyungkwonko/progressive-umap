@@ -7,7 +7,7 @@ sh download.sh
 ```
 or to remove downloaded files,
 ```sh
-sh download.sh true
+sh download.sh remove
 ```
 
 Further information on each dataset can be found in the websites listed below.

@@ -1,5 +1,5 @@
 remove=$1
-if [ "$remove" = true ]; then
+if [ "$remove" = "remove" ]; then
   echo "Removing CIFAR-10 Dataset..."
   find . -type f -not -name '*.sh' -print0 | xargs -0 rm --
   echo "Removed!"
