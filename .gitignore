@@ -1,7 +1,3 @@
 __pycache__/
 venv/
-data/cifar-10
-data/mnist
-data/fashion
-data/google
 .vscode/

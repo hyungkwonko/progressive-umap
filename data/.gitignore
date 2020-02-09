@@ -1,0 +1,11 @@
+cifar-10/data_batch_1
+cifar-10/data_batch_2
+cifar-10/data_batch_3
+cifar-10/data_batch_4
+cifar-10/data_batch_5
+cifar-10/batches.meta
+cifar-10/readme.html
+cifar-10/test_batch
+mnist/*.gz
+fashion/*.gz
+google/
