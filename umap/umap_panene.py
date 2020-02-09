@@ -1733,8 +1733,8 @@ class UMAP(BaseEstimator):
         target_metric_kwds=None,
         target_weight=0.5,
         transform_seed=42,
-        ops=300,
-        first_ops=5000,
+        ops=1000,
+        first_ops=15000,
         verbose=False):
 
         self.n_neighbors = n_neighbors
@@ -2439,8 +2439,8 @@ class UMAP(BaseEstimator):
         ###########################
         self.batch_epochs = 40
         self.last_epochs = 200
-        self.first_ops = 15000
-        self.ops = 1000
+        # self.first_ops = 15000
+        # self.ops = 1000
         ###########################
 
         # mkdir if it does not exist

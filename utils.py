@@ -6,12 +6,45 @@ import timeit
 import gzip
 from gensim.models.keyedvectors import KeyedVectors
 from matplotlib import pyplot as plt
+import imageio
+import glob
 
 from umap.utils import measure_time
 
 # t-SNE
 # https://scipy-lectures.org/packages/scikit-learn/auto_examples/plot_tsne.html
 from sklearn.manifold import TSNE
+
+
+def load_coil(data="coil20"):
+    images, labels = [], []
+    for image in glob.glob(os.path.join(os.getcwd(), 'data', data, "*.png")):
+        labels.append(int(image.split("__")[0].split("/obj")[1]))
+        images.append(imageio.imread(image))
+    images = np.array(images)
+    labels = np.array(labels)
+    return images.reshape(images.shape[0], -1), labels.reshape(-1)
+
+# Load Kuzushiji Japanese Handwritten dataset
+def load_kuzushiji(path, dtype="kmnist", kind='train'):
+    images_path = os.path.join(path, f'{dtype}-{kind}-imgs.npz')
+    labels_path = os.path.join(path, f'{dtype}-{kind}-labels.npz')
+    images = np.load(images_path)
+    images = images.f.arr_0
+    images = images.reshape(images.shape[0], -1)
+    labels = np.load(labels_path)
+    labels = labels.f.arr_0
+    labels = labels.reshape(-1)
+    return images, labels
+
+def load_merge_kuzushiji(data="kuzushiji"):
+    if data == "kuzushiji":
+        x, y = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), kind='train')
+        x_test, y_test = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), kind='test')
+    elif data == "kuzushiji49":
+        x, y = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), dtype="k49", kind='train')
+        x_test, y_test = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), dtype="k49", kind='test')
+    return np.append(x, x_test, axis=0), np.append(y, y_test, axis=0)
 
 # FASHION MNIST (60000, 784), 26MB
 def load_mnist(path, kind='train'):
@@ -28,12 +61,10 @@ def load_mnist(path, kind='train'):
 
     return images, labels
 
-def load_merge_mnist():
-    x, y = load_mnist('data/fashion', kind='train')
-    x_test, y_test = load_mnist('data/fashion', kind='t10k')
-    x_append = np.append(x, x_test, axis=0)
-    y_append = np.append(y, y_test, axis=0)
-    return x_append, y_append
+def load_merge_mnist(data='mnist'):
+    x, y = load_mnist(os.path.join(os.getcwd(), 'data', data), kind='train')
+    x_test, y_test = load_mnist(os.path.join(os.getcwd(), 'data', data), kind='t10k')
+    return np.append(x, x_test, axis=0), np.append(y, y_test, axis=0)
 
 def pca(X=np.array([]), no_dims=50):
     """

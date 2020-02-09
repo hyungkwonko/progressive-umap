@@ -11,6 +11,7 @@ docutils==0.15.2
 Flask==1.1.1
 gensim==3.8.1
 idna==2.8
+imageio==2.6.1
 isort==4.3.21
 itsdangerous==1.1.0
 Jinja2==2.11.1
@@ -24,6 +25,7 @@ matplotlib==3.1.2
 mccabe==0.6.1
 numba==0.46.0
 numpy==1.18.0
+Pillow==7.0.0
 pylint==2.4.4
 pynene==0.0.1
 pyparsing==2.4.6
