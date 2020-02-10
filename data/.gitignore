@@ -14,6 +14,6 @@ kuzushiji/*.csv
 kuzushiji49/*.npz
 kuzushiji49/*.csv
 coil20/*.zip
-coil20/*.png
+coil20/files/
 coil100/*.zip
-coil100/*.png
+coil100/files/

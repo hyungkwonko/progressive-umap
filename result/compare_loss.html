@@ -11,7 +11,7 @@
 
   <script>
 
-    let charts = ["fashion/umap/log_fashion.csv", "fashion/pumap/log_fashion.csv"]
+    let charts = ["csv/umap/log_fashion.csv", "csv/pumap/log_fashion.csv"]
 
     function translate(x, y) { return 'translate(' + x + ',' + y + ')'; }
     
@@ -62,7 +62,7 @@
         
         let targets = [];
         new_data.forEach(e => {
-          if(epochs.includes(e['self.epochs'])) 
+          if(epochs.includes(e.epochs)) 
             targets.push(e)
         });
 
@@ -115,9 +115,9 @@
           )
 
         targets.forEach(target => {
-          let target_epoch = target['self.epochs']
-          let target_time = target['time_taken']
-          let target_cost = target['cost']
+          let target_epoch = target.epochs
+          let target_time = target.time_taken
+          let target_cost = target.cost
 
           svg.append('line')
             .attr('x1', 0)
@@ -154,7 +154,7 @@
 
           let targets2 = [];
           new_data2.forEach(e => {
-            if(epochs.includes(e['self.epochs'])) 
+            if(epochs.includes(e.epochs)) 
               targets2.push(e)
           });
 
@@ -178,9 +178,9 @@
               )
 
           targets2.forEach(target => {
-            let target_epoch = target['self.epochs']
-            let target_time = target['time_taken']
-            let target_cost = target['cost']
+            let target_epoch = target.epochs
+            let target_time = target.time_taken
+            let target_cost = target.cost
 
             svg.append('line')
               .attr('x1', 0)

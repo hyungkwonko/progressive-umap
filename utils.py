@@ -14,16 +14,17 @@ from umap.utils import measure_time
 # t-SNE
 # https://scipy-lectures.org/packages/scikit-learn/auto_examples/plot_tsne.html
 from sklearn.manifold import TSNE
+from sklearn.utils import shuffle
 
 
-def load_coil(data="coil20"):
+def load_coil(data='coil20', seed=42):
     images, labels = [], []
-    for image in glob.glob(os.path.join(os.getcwd(), 'data', data, "*.png")):
-        labels.append(int(image.split("__")[0].split("/obj")[1]))
-        images.append(imageio.imread(image))
-    images = np.array(images)
-    labels = np.array(labels)
-    return images.reshape(images.shape[0], -1), labels.reshape(-1)
+    for path in glob.glob(os.path.join(os.getcwd(), 'data', data, 'files', '*.png')):
+        labels.append(int(path.split("__")[0].split("/obj")[1]))
+        images.append(imageio.imread(path))
+    images, labels = np.array(images), np.array(labels)
+    images, labels = images.reshape(images.shape[0], -1), labels.reshape(-1)
+    return shuffle(images, labels, random_state=seed)
 
 # Load Kuzushiji Japanese Handwritten dataset
 def load_kuzushiji(path, dtype="kmnist", kind='train'):
@@ -37,14 +38,17 @@ def load_kuzushiji(path, dtype="kmnist", kind='train'):
     labels = labels.reshape(-1)
     return images, labels
 
-def load_merge_kuzushiji(data="kuzushiji"):
-    if data == "kuzushiji":
+def load_merge_kuzushiji(data='kuzushiji', seed=42):
+    if data == 'kuzushiji':
         x, y = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), kind='train')
         x_test, y_test = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), kind='test')
-    elif data == "kuzushiji49":
+    elif data == 'kuzushiji49':
         x, y = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), dtype="k49", kind='train')
         x_test, y_test = load_kuzushiji(os.path.join(os.getcwd(), 'data', data), dtype="k49", kind='test')
-    return np.append(x, x_test, axis=0), np.append(y, y_test, axis=0)
+    x = np.append(x, x_test, axis=0)
+    y = np.append(y, y_test, axis=0)
+    # return randomize data
+    return shuffle(x, y, random_state=seed)
 
 # FASHION MNIST (60000, 784), 26MB
 def load_mnist(path, kind='train'):
@@ -109,7 +113,6 @@ def load_CIFAR10(ROOT):
 def get_CIFAR10_data(cifar10_dir):
     # Load the raw CIFAR-10 data
     X_train, y_train, X_test, y_test = load_CIFAR10(cifar10_dir)
-
     x_train = X_train.astype('float32')
     x_test = X_test.astype('float32')
     x_train /= 255

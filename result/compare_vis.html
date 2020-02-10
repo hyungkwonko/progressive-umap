@@ -65,10 +65,10 @@
 
   <script>
 
-  let labels = read_csv("fashion/y.csv")
-  let labels_code = read_csv("fashion/y_label.csv")
-  let pumap_chart = read_csv("fashion/pumap/log_fashion.csv")
-  let umap_chart = read_csv("fashion/umap/log_fashion.csv")
+  let labels = read_csv("csv/y.csv")
+  let labels_code = read_csv("csv/y_label.csv")
+  let pumap_chart = read_csv("csv/pumap/log_fashion.csv")
+  let umap_chart = read_csv("csv/umap/log_fashion.csv")
 
   let margin = { top: 20, right: 20, bottom: 40, left: 20 };
   let legend_margin = { rect_size: 20, spacing: 5, margin: 60 };
@@ -213,17 +213,17 @@
 
   }
 
-  draw_init("#pumap_init", 'fashion/pumap/log_fashion.csv')
-  draw_init("#umap_init", 'fashion/umap/log_fashion.csv')
+  draw_init("#pumap_init", 'csv/pumap/log_fashion.csv')
+  draw_init("#umap_init", 'csv/umap/log_fashion.csv')
 
-  draw('#pumap100', 'fashion/pumap/100.csv', labels)
-  draw('#pumap200', 'fashion/pumap/200.csv', labels)
-  draw('#pumap300', 'fashion/pumap/300.csv', labels)
-  draw('#pumap500', 'fashion/pumap/500.csv', labels)
-  draw('#umap100', 'fashion/umap/100.csv', labels)
-  draw('#umap200', 'fashion/umap/200.csv', labels)
-  draw('#umap300', 'fashion/umap/300.csv', labels)
-  draw('#umap500', 'fashion/umap/500.csv', labels)
+  draw('#pumap100', 'csv/pumap/100.csv', labels)
+  draw('#pumap200', 'csv/pumap/200.csv', labels)
+  draw('#pumap300', 'csv/pumap/300.csv', labels)
+  draw('#pumap500', 'csv/pumap/500.csv', labels)
+  draw('#umap100', 'csv/umap/100.csv', labels)
+  draw('#umap200', 'csv/umap/200.csv', labels)
+  draw('#umap300', 'csv/umap/300.csv', labels)
+  draw('#umap500', 'csv/umap/500.csv', labels)
 
   function get_row(chart, n) {
     for(let i=0; i<chart.length; i++) {

@@ -2159,7 +2159,7 @@ class UMAP(BaseEstimator):
         # mkdir if it does not exist
         pathlib.Path(os.path.join(os.getcwd(), 'result', dname, 'umap')).mkdir(parents=True, exist_ok=True)
 
-        with open(f'./result/fashion/umap/log_fashion.csv', 'a') as log:
+        with open(os.path.join(os.getcwd(), 'result', dname, 'umap', 'log_fashion.csv'), 'a') as log:
             log.write(f"size,epochs,time_taken,cost\n")
             log.write(f"{embedding.shape[0]},{self.epochs},{time_taken.total_seconds()},{0}\n")
 
@@ -2432,7 +2432,7 @@ class UMAP(BaseEstimator):
 
         # For smaller datasets we can run more epochs
         if self.N <= 10000:
-            self.n_epochs = 1000
+            self.n_epochs = 2000
         else:
             self.n_epochs = 5000
 
@@ -2531,7 +2531,7 @@ class UMAP(BaseEstimator):
             with open(os.path.join(os.getcwd(), 'result', _dname, 'pumap', 'log_fashion.csv'), 'a') as log:
                 log.write(f"{self.table.size()},{self.epochs},{time_taken.total_seconds()},{cost}\n")
 
-            saves = [100, 200, 300, 500, 1000, 2000, 2500]
+            saves = [100, 200, 300, 500, 1000, 1500, 2000, 2500]
 
             # per epochs for save
             # save_eps = 100

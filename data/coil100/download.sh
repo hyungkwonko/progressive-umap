@@ -2,14 +2,14 @@ remove=$1
 if [ "$remove" = "remove" ]; then
   echo "Removing Coil 100 Dataset..."
   rm *.zip
-  rm *.png
+  rm -rf files
   echo "Removed!"
 else
   echo "Downloading Coil 100 Dataset..."
-  wget "http://www.cs.columbia.edu/CAVE/databases/SLAM_coil-20_coil-10/coil-100/coil-100.zip" -O coil-100.zip
+  wget "http://www.cs.columbia.edu/CAVE/databases/SLAM_coil-20_coil-100/coil-100/coil-100.zip" -O coil-100.zip
   echo "Extracting Coil 100..."
-  unzip -q coil-100.zip
-  mv coil-100/* ./
-  rm -rf coil-100
+  unzip -d files -q coil-100.zip
+  mv files/coil-100/*  files/
+  rm -rf files/coil-100
   echo "Download Finished!"
 fi

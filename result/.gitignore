@@ -1,12 +1,9 @@
 __pycache__/
 compare.html
 visualizer.html
-fashion/pumap/*
-fashion/umap/*
 fashion/
 mnist/
 coil20/
 coil100/
 kuzushiji/
 kuzushiji49/
-**/*.csv
