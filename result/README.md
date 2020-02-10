@@ -1,24 +1,9 @@
 ## Results
-Progressive UMAP was tested on various benchmarks. Here I introduce some of the results.
-
-
-### Coil 20
-
-|            UMAP             |            PUMAP          |
-:----------------------------:|:--------------------------:
-|     500 epochs (7.1s)       |     500 epochs (12.6s)    |
-![Coil20 umap](./images/coil20_umap.png)|![Coil20 pumap](./images/coil20_pumap.png)
-
-
-### Coil 100
-
-|            UMAP             |            PUMAP          |
-:----------------------------:|:--------------------------:
-|     500 epochs (46.8s)       |     500 epochs (55.4s)   |
-![Coil100 umap](./images/coil100_umap.png)|![Coil100 pumap](./images/coil100_pumap.png)
+We tested Progressive UMAP (PUMAP) on various benchmarks. Here I introduce some of the results. Detailed information on each dataset is explained [here](https://github.com/hyungkwonko/progressive-umap/blob/master/data/README.md).
 
 
 ### Fashion MNIST
+About one third of the total embedding time was required for Progressive UMAP compared to original UMAP implementation. As illustrated, although the number of points embedded are fewer, the output visualization was almost the same.
 
 |            UMAP             |            PUMAP          |
 :----------------------------:|:--------------------------:
@@ -35,6 +20,7 @@ Progressive UMAP was tested on various benchmarks. Here I introduce some of the 
 
 
 ### Kuzushiji MNIST
+There is a problem in current PUMAP implementation. When appending new points, it locates them calculating the mean value of existing points for each class. As seen below, when one class is divided into big clusters more than one, newly inserted points harm the overall performance of embedding. We plan to solve it by locating them into one of the clusters' center, not some weird center of different clusters.
 
 |            UMAP             |            PUMAP          |
 :----------------------------:|:--------------------------:
