@@ -11,7 +11,7 @@ The source code was built and tested under Ubuntu 18.04 environment. The instruc
 git clone https://github.com/hyungkwonko/progressive-umap.git
 ```
 
-2. Build [pynene](https://github.com/e-/PANENE)
+2. Build [PANENE](https://github.com/e-/PANENE)
 ```bash
 mkdir build
 cmake ..
