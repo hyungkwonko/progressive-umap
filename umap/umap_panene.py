@@ -2196,16 +2196,16 @@ class UMAP(BaseEstimator):
                 with open(os.path.join(os.getcwd(), 'result', dname, 'umap', f'{self.epochs}.csv'), 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
 
-                fig, ax = plt.subplots(1, figsize=(10, 10))
-                plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
-                plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
-                plt.ylim(-15.0, +15.0)
-                plt.xlim(-15.0, +15.0)
+                # fig, ax = plt.subplots(1, figsize=(10, 10))
+                # plt.scatter(*embedding.T, s=0.3, c=label, cmap='Spectral', alpha=1.0)
+                # plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
+                # plt.ylim(-15.0, +15.0)
+                # plt.xlim(-15.0, +15.0)
                 # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
                 # cbar.set_ticks(np.arange(10))
                 # cbar.set_ticklabels(_item)
                 # plt.title('Fashion MNIST Embedded')
-                plt.savefig(os.path.join(os.getcwd(), 'result', dname, 'umap', f'{self.epochs}.png'))
+                # plt.savefig(os.path.join(os.getcwd(), 'result', dname, 'umap', f'{self.epochs}.png'))
 
         return embedding
 
@@ -2540,16 +2540,16 @@ class UMAP(BaseEstimator):
                 with open(os.path.join(os.getcwd(), 'result', _dname, 'pumap', f'{self.epochs}.csv'), 'wb') as log:
                     np.savetxt(log, embedding, delimiter=",")
 
-                fig, ax = plt.subplots(1, figsize=(10, 10))
-                plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
-                plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
-                plt.ylim(-15.0, +15.0)
-                plt.xlim(-15.0, +15.0)
+                # fig, ax = plt.subplots(1, figsize=(10, 10))
+                # plt.scatter(*embedding.T, s=0.3, c=_label[:self.table.size()], cmap='Spectral', alpha=1.0)
+                # plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
+                # plt.ylim(-15.0, +15.0)
+                # plt.xlim(-15.0, +15.0)
                 # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
                 # cbar.set_ticks(np.arange(10))
                 # cbar.set_ticklabels(_item)
                 # plt.title('Fashion MNIST Embedded')
-                plt.savefig(os.path.join(os.getcwd(), 'result', _dname, 'pumap', f'{self.epochs}.png'))
+                # plt.savefig(os.path.join(os.getcwd(), 'result', _dname, 'pumap', f'{self.epochs}.png'))
 
         self._input_hash = joblib.hash(self._raw_data)
 

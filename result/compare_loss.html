@@ -101,7 +101,7 @@
           .style("font-family", "Helvetica")
           .style('font-style', 'italic')
           .style("font-size", "18px")
-          .text("Loss");      
+          .text("Average Loss");      
 
         // Add the line
         svg.append("path")
@@ -141,20 +141,21 @@
 
           // convert all values into numbers
           data2.forEach(function(d) {
+            // d.epochs = +d.epochs
             d.time_taken = +d.time_taken;
             d.cost = +d.cost;
           });
 
           let new_data2 = [];
           data2.forEach(e => {
-            if(e.time_taken < 120)
+            if(e.time_taken < 120 && +e.epochs <= 500)
               new_data2.push(e)
           });
           data2 = new_data2;
 
           let targets2 = [];
           new_data2.forEach(e => {
-            if(epochs.includes(e.epochs)) 
+            if(epochs.includes(e.epochs))
               targets2.push(e)
           });
 
@@ -173,7 +174,7 @@
             .attr("stroke", "red")
             .attr("stroke-width", 1.5)
             .attr("d", d3.line()
-              .x(d => x2(d.time_taken))
+              .x(d => x(d.time_taken))
               .y(d => y(d.cost))
               )
 
@@ -189,32 +190,32 @@
               .attr('y2', 10)
               .attr('stroke', '#333')            
               .attr('stroke-width', '2px')
-              .attr('transform', translate(x2(target_time), y(target_cost)))
+              .attr('transform', translate(x(target_time), y(target_cost)))
 
             svg.append('text')
               .text('Iter #' + target_epoch)
               .style('font-size', '0.9em')
               .attr('dy', '1.5em')
               .attr('dx', '-2.2em')
-              .attr('transform', translate(x2(target_time), y(target_cost)))
+              .attr('transform', translate(x(target_time), y(target_cost)))
               
           })
         })
 
         // legend
-        let legend_keys = ["UMAP", "PUMAP"]
+        let legend_keys = ["UMAP", "Progressive UMAP"]
         let legend_color = ["steelblue", "red"]
 
         let legend = d3.selectAll('svg')
           .append('g')
-          .attr('transform', translate(width - 130, 100))
+          .attr('transform', translate(width - 160, 100))
 
         legend.append('rect')
           .attr('stroke', 'black')
           .attr('stroke-width', '1.5px')
           .attr('fill', 'none')
           .style('shape-rendering', 'crispEdges')
-          .attr('width', '150px')
+          .attr('width', '230px')
           .attr('height', '60px')
         
         legend.append('g').attr('transform', translate(15, 15))
