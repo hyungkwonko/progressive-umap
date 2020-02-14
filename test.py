@@ -28,9 +28,6 @@ if __name__ == "__main__":
   # umap_panene.UMAP(n_neighbors=50, random_state=3, first_ops=2500, ops=10).fit_transform(X=x5, y=None, label=y5, dname='coil20', progressive=True)
   # umap_panene.UMAP(n_neighbors=50, random_state=3).fit_transform(X=x5, y=None, label=y5, dname='coil20', progressive=False)
 
-  x6, y6 = load_coil(data="coil100", seed=3)
-  print(x6.shape)
-  print(y6.shape)
-  exit()
-  umap_panene.UMAP(n_neighbors=10, random_state=3, first_ops=10000, ops=10).fit_transform(X=x6, y=None, label=y6, dname='coil100', progressive=True)
+  # x6, y6 = load_coil(data="coil100", seed=3)
+  # umap_panene.UMAP(n_neighbors=10, random_state=3, first_ops=10000, ops=10).fit_transform(X=x6, y=None, label=y6, dname='coil100', progressive=True)
   # umap_panene.UMAP(n_neighbors=10, random_state=3).fit_transform(X=x6, y=None, label=y6, dname='coil100', progressive=False)
