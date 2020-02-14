@@ -3,8 +3,8 @@ from utils import load_merge_mnist, load_merge_cifar, load_merge_kuzushiji, load
 
 if __name__ == "__main__":
 
-  # x, y = load_merge_mnist(data="fashion")
-  # umap_panene.UMAP(n_neighbors=5, random_state=2, first_ops=15000, ops=1000).fit_transform(X=x, y=None, label=y, dname='fashion', progressive=True)
+  x, y = load_merge_mnist(data="fashion")
+  umap_panene.UMAP(n_neighbors=5, random_state=2, first_ops=15000, ops=1000).fit_transform(X=x, y=None, label=y, dname='fashion2', progressive=True)
 
   # umap_panene.UMAP(n_neighbors=5, random_state=2, first_ops=40000, ops=300).fit_transform(X=x, y=None, label=y, dname='fashion', progressive=True)
   # umap_panene.UMAP(n_neighbors=5, random_state=2).fit_transform(X=x, y=None, label=y, dname='fashion', progressive=False)
