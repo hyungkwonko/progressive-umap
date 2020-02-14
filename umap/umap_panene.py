@@ -2248,13 +2248,15 @@ class UMAP(BaseEstimator):
             if self.epochs > 0:
                 # overwrite random values with 0
                 for j in range(self.n_components):
-                    self.embedding_[i][j] = 0
+                    # self.embedding_[i][j] = 0
+                    self.embedding_[i][j] = self.embedding_[self.indexes[i][1]][j]
 
                 # set their initial points to the mean of its neighbors
-                for k in range(1, self.n_neighbors):
-                    for j in range(self.n_components):
-                        # issue1: divide by (self.n_neighbors - 1) ?
-                        self.embedding_[i][j] += self.embedding_[self.indexes[i][k]][j] / self.n_neighbors
+                # for k in range(1, self.n_neighbors):
+                #     for j in range(self.n_components):
+                #         # issue1: divide by (self.n_neighbors - 1) ?
+                #         self.embedding_[i][j] += self.embedding_[self.indexes[i][k]][j] / self.n_neighbors
+
                 # issue2: add random noise after calculation
                 if (updates['addPointResult'] > 0) & (i == self.table.size() - 1):
                     nndist = np.mean(self.distances[:, 1]) # WHY second column?? is this just chosen randomly?
@@ -2263,8 +2265,8 @@ class UMAP(BaseEstimator):
                     ).astype(np.float32)
 
         # if self.verbose:
-        #     for i in updatedIds:
-        #         print(f"i: {i}, index: {self.indexes[i]}, distance: {self.distances[i]}, Y[i]: {self.embedding_[i]}")
+            # for i in updatedIds:
+            #     print(f"i: {i}, index: {self.indexes[i]}, distance: {self.distances[i]}, Y[i]: {self.embedding_[i]}")
 
         '''
         EARLY EXAGGERATION SKIPPED -> use BANDWIDTH in UMAP
@@ -2545,10 +2547,10 @@ class UMAP(BaseEstimator):
                 # plt.setp(ax, xticks=[-10, -5, 0, 5, 10], yticks=[-10, -5, 0, 5, 10])
                 # plt.ylim(-15.0, +15.0)
                 # plt.xlim(-15.0, +15.0)
-                # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
-                # cbar.set_ticks(np.arange(10))
-                # cbar.set_ticklabels(_item)
-                # plt.title('Fashion MNIST Embedded')
+                # # cbar = plt.colorbar(boundaries=np.arange(11)-0.5)
+                # # cbar.set_ticks(np.arange(10))
+                # # cbar.set_ticklabels(_item)
+                # # plt.title('Fashion MNIST Embedded')
                 # plt.savefig(os.path.join(os.getcwd(), 'result', _dname, 'pumap', f'{self.epochs}.png'))
 
         self._input_hash = joblib.hash(self._raw_data)
