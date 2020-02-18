@@ -113,6 +113,7 @@
             .x(d => x(d.time_taken))
             .y(d => y(d.cost))
           )
+          .style("stroke-dasharray", ("6, 6"))
 
         targets.forEach(target => {
           let target_epoch = target.epochs
@@ -227,6 +228,7 @@
           .attr('y2', 0)
           .attr('stroke', legend_color[0])
           .attr('stroke-width', '2px')
+          .style("stroke-dasharray", ("6, 6"))
 
         legend.append('g').attr('transform', translate(35, 15))
           .append('text')

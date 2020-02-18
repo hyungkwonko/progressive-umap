@@ -1713,7 +1713,7 @@ class UMAP(BaseEstimator):
         n_epochs=None,
         epochs=0,
         last_epochs=200,
-        batch_epochs=50,
+        batch_epochs=40,
         learning_rate=1.0,
         init="spectral",
         min_dist=0.1,
@@ -2439,8 +2439,8 @@ class UMAP(BaseEstimator):
             self.n_epochs = 5000
 
         ###########################
-        self.batch_epochs = 40
-        self.last_epochs = 200
+        # self.batch_epochs = 40
+        # self.last_epochs = 200
         # self.first_ops = 15000
         # self.ops = 1000
         ###########################
