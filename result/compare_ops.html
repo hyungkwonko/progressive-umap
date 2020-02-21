@@ -1,0 +1,223 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="ie=edge">
+  <title>Result Visualization</title>
+  <style>
+    h1 {
+      font-family: sans-serif;
+      font-size: 3.0em;
+      text-align: center;
+    }
+    td {
+      text-align: center;
+      padding: 30px 0;
+    }
+    td > h2 {
+      font-family: Helvetica;
+      font-size: 3.0em;
+    }
+    td > p {
+      font-family: Helvetica;
+      text-align: center;
+      align-items: center;
+      font-size: 1.6em; 
+    }
+  </style>
+</head>
+<body>
+  <script src="https://d3js.org/d3.v4.min.js"></script>
+  <table>
+    <tr>
+      <td><svg id="pumap300"></svg></td>
+      <td><svg id="pumap500"></svg></td>
+      <td><svg id="pumap700"></svg></td>
+      <td><svg id="pumap1000"></svg></td>
+      <td><svg id="umap_label"></svg></td>
+    </tr>
+  </table>
+
+  <script>
+
+  let labels = read_csv("csv/y.csv")
+  let labels_code = read_csv("csv/y_label.csv")
+  let pumap_chart300 = read_csv("csv/ops/log_fashion_300.csv")
+  let pumap_chart500 = read_csv("csv/ops/log_fashion_500.csv")
+  let pumap_chart700 = read_csv("csv/ops/log_fashion_700.csv")
+  let pumap_chart1000 = read_csv("csv/ops/log_fashion_1000.csv")
+
+  let margin = { top: 20, right: 20, bottom: 40, left: 20 };
+  let legend_margin = { rect_size: 20, spacing: 5, margin: 60 };
+  let width = 310, height = 320;
+
+  // csv -> array
+  function read_csv(path) {
+    let request = new XMLHttpRequest();  
+    request.open("GET", path, false);   
+    request.send(null);  
+
+    let csvData = new Array();
+    let jsonObject = request.responseText.split(/\r?\n|\r/);
+    for (let i = 0; i < jsonObject.length; i++) {
+      csvData.push(jsonObject[i].split(','));
+    }
+    return csvData
+  }
+
+  function draw_init(svgId, path) {
+    plog = read_csv(path) // size, self.epochs, time_taken, cost
+    let obj = plog.find(o => o[1] == 0);
+    d3.select(svgId)
+      .text(d3.format(',.1f')(+obj[2]))
+  }
+
+  function translate(x, y) { return 'translate(' + x + ',' + y + ')'; }
+
+  function draw(svgId, path, labels) {
+    d3.text(path, (data) => {
+
+      data = "x1,x2\n" + data;  //now you have the header
+      data = d3.csvParse(data)
+
+      // convert all values into numbers
+      data.forEach(function(d) {
+        d.x1 = +d.x1;
+        d.x2 = +d.x2;
+      });
+
+      let svg = d3.select(svgId)
+        .attr('width', width + margin.left + margin.right)
+        .attr('height', height + margin.top + margin.bottom)
+
+      let x = d3.scaleLinear()
+        .domain(d3.extent(data, d => d.x1))
+        .range([0, width])
+
+      let y = d3.scaleLinear()
+        .domain(d3.extent(data, d => d.x2))
+        .range([0, height])
+
+      let color = d3.scaleOrdinal()
+        .domain(labels)
+        .range(["#4e79a7","#f28e2c","#e15759","#76b7b2","#59a14f","#edc949","#af7aa1","#ff9da7","#9c755f","#bab0ab"]);
+        // .range(d3.schemeCategory10);
+
+      svg.append('g')
+        .selectAll('circle')
+        .data(data)
+        .enter()
+        .append('circle')
+          .attr('r', 1.5)
+          .style('fill', (d, i) => color(labels[i]))
+          .style('opacity', 0.4)
+          .attr('stroke', 'black')
+          .attr('stroke-width', '0.03px')
+          .attr('cx', d => x(d.x1))
+          .attr('cy', d => y(d.x2))
+    })
+  }
+
+  function draw_legend(svgId, labels, labels_code) {
+
+    let legend_width = 100;
+
+    let color = d3.scaleOrdinal()
+        .domain(labels)
+        .range(["#4e79a7","#f28e2c","#e15759","#76b7b2","#59a14f","#edc949","#af7aa1","#ff9da7","#9c755f","#bab0ab"]);
+        // .range(d3.schemeCategory10);
+
+    let svg = d3.select(svgId)
+      .attr('width', legend_width + margin.left + margin.right)
+      .attr('height', height + margin.top + margin.bottom)
+
+    // to json format
+    labels_code = labels_code.map(function(e) {
+      return {
+        label: +e[0],
+        code: e[1]
+        };
+    });
+
+    let legend = svg.selectAll('.legend') 
+        .data(color.domain())
+        .enter()
+        .append('g')
+        .attr('class', 'legend')
+        .attr('transform', (d,i) => translate(0, legend_margin.margin / 2 + (height - legend_margin.margin) * i / color.domain().length));
+
+      legend.append('rect')
+        .attr('width', legend_margin.rect_size)
+        .attr('height', legend_margin.rect_size)
+        .style('fill', color)
+        .style('stroke', color);
+        
+      legend.append('text')
+        .attr('x', legend_margin.rect_size + legend_margin.spacing)
+        .attr('y', legend_margin.rect_size)
+        .style('font-size', '1.2em')
+        .style('font-family', 'Helvetica')
+        .text(d => Object.values(labels_code)[parseInt(d)].code);
+  }
+
+  function draw_error(svgId, row, ops) {
+
+    let label_height = 40;
+    let numpts = +row[0];
+    let iter = +row[1];
+    let time = +row[2];
+    let error = +row[3];
+
+    let svg = d3.select(svgId)
+    
+    svg.attr('width', width).attr('height', height + label_height)
+
+    let te = svg.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '-0.6em')
+      .style('font-size', '1.75em')
+      .style('font-weight', 700)
+      .style('font-family', 'Helvetica')
+      .attr('transform', translate(width / 2, height + label_height + 12))
+      .text('ops=' + (+ops) + ', iter=' + (+iter))
+      
+    let te2 = svg.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '-0.6em')
+      .style('font-size', '1.2em')
+      .style('font-family', 'Helvetica')
+      .attr('transform', translate(width / 2, height + label_height + 28))
+      .text('(' + d3.format(',.1f')(time) + 's, error=' + d3.format('.2f')(error) + ', ' + d3.format(',')(numpts) + 'pts)')
+
+  }
+
+  draw_init("#pumap_init", 'csv/pumap/log_fashion.csv')
+
+  draw('#pumap300', 'csv/ops/500_300.csv', labels)
+  draw('#pumap500', 'csv/ops/500_500.csv', labels)
+  draw('#pumap700', 'csv/ops/500_700.csv', labels)
+  draw('#pumap1000', 'csv/ops/500_1000.csv', labels)
+
+  function get_row(chart, n) {
+    for(let i=0; i<chart.length; i++) {
+      if (chart[i][1] == n) {
+        return i
+      }
+    }
+  }
+
+  let pumap_row100 = Object.values(pumap_chart300)[get_row(Object.values(pumap_chart300), 500)]
+  let pumap_row200 = Object.values(pumap_chart500)[get_row(Object.values(pumap_chart500), 500)]
+  let pumap_row300 = Object.values(pumap_chart700)[get_row(Object.values(pumap_chart700), 500)]
+  let pumap_row500 = Object.values(pumap_chart1000)[get_row(Object.values(pumap_chart1000), 500)]
+
+  draw_error('#pumap300', pumap_row100, 300)
+  draw_error('#pumap500', pumap_row200, 500)
+  draw_error('#pumap700', pumap_row300, 700)
+  draw_error('#pumap1000', pumap_row500, 1000)
+
+  draw_legend('#umap_label', labels, labels_code)
+
+  </script>
+
+</body>
