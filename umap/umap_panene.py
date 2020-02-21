@@ -2438,13 +2438,6 @@ class UMAP(BaseEstimator):
         else:
             self.n_epochs = 5000
 
-        ###########################
-        # self.batch_epochs = 40
-        # self.last_epochs = 200
-        # self.first_ops = 15000
-        # self.ops = 1000
-        ###########################
-
         # mkdir if it does not exist
         pathlib.Path(os.path.join(os.getcwd(), 'result', _dname, 'pumap')).mkdir(parents=True, exist_ok=True)
 

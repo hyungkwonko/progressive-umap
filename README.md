@@ -40,3 +40,7 @@ python test.py
 Even though the final loss was smaller in orifinal UMAP, Progressive UMAP showed a comparable output with a shorter time. Moreover, the time required for initialization was much shorter, we could see the first embedding in a few seconds.
 ![result](./result/comparison/d3result.png)
 
+
+# Projection results with changing **ops** parameter
+If we increase *ops*, it means we append more points in a single batch. We tested how the projection results could be affected, setting ops 300, 500, 700 and 1000. As shown below, although the result of higher *ops* value took a little more time, the projection quality was almost the same.
+![result](./result/comparison/ops.png)
