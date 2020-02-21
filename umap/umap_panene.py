@@ -2467,8 +2467,6 @@ class UMAP(BaseEstimator):
                     with open(os.path.join(os.getcwd(), 'result', _dname, 'pumap', 'log_fashion.csv'), 'a') as log:
                         log.write(f"size,epochs,time_taken,cost\n")
                         log.write(f"{self.table.size()},{self.epochs},{init_time.total_seconds()},{0}\n")
-            else:
-                self.batch_epochs = 2
 
             self.graph_ = self.graph_.tocoo() # type: csr_matrix to coo_matrix
             self.graph_.sum_duplicates()

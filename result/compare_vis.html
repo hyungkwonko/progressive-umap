@@ -35,10 +35,9 @@
           UMAP
         </h2>
         <p>
-          Neighbor
+          Initialization
           <br>
-          Computation
-          <br><span style="font-size:0.8em">(<span id="umap_init"></span>s)</span>
+          <span style="font-size:0.8em">(<span id="umap_init"></span>s)</span>
         </p>
       </td>
       <td><svg id="umap100"></svg></td>
@@ -133,6 +132,7 @@
         .append('circle')
           .attr('r', 1.5)
           .style('fill', (d, i) => color(labels[i]))
+          .style('opacity', 0.4)
           .attr('stroke', 'black')
           .attr('stroke-width', '0.03px')
           .attr('cx', d => x(d.x1))
@@ -209,7 +209,7 @@
       .style('font-size', '1.2em')
       .style('font-family', 'Helvetica')
       .attr('transform', translate(width / 2, height + label_height + 28))
-      .text('(' + d3.format(',.1f')(time) + 's, error=' + d3.format('.2f')(error) + ', ' + numpts + 'pts)')
+      .text('(' + d3.format(',.1f')(time) + 's, error=' + d3.format('.2f')(error) + ', ' + d3.format(',')(numpts) + 'pts)')
 
   }
 
