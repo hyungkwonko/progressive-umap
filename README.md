@@ -41,6 +41,6 @@ Even though the final loss was smaller in orifinal UMAP, Progressive UMAP showed
 ![result](./result/comparison/d3result.png)
 
 
-# Projection results with changing **ops** parameter
-If we increase *ops*, it means we append more points in a single batch. We tested how the projection results could be affected, setting ops 300, 500, 700 and 1000. As shown below, although the result of higher *ops* value took a little more time, the projection quality was almost the same.
+# Projection results with changing *ops* parameter
+If we increase *ops*, it means we append more points in a single batch. We tested how the projection results could be affected, setting *ops* 300, 500, 700 and 1000. As shown below, although the result of higher *ops* value took a little more time, the projection quality was almost the same.
 ![result](./result/comparison/ops.png)
