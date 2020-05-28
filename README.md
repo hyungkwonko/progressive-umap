@@ -44,3 +44,19 @@ Even though the final loss was smaller in orifinal UMAP, Progressive UMAP showed
 # Projection results with changing *ops* parameter
 If we increase *ops*, it means we append more points in a single batch. We tested how the projection results could be affected, setting *ops* 300, 500, 700 and 1000. As shown below, although the result of higher *ops* value took a little more time, the projection quality was almost the same.
 ![result](./result/comparison/ops.png)
+
+
+# Reference
+If you want to use this repository for your own work, please cite [our paper](https://diglib.eg.org/handle/10.2312/evs20201061).
+```
+@inproceedings {s.20201061,
+booktitle = {EuroVis 2020 - Short Papers},
+editor = {Kerren, Andreas and Garth, Christoph and Marai, G. Elisabeta},
+title = {{Progressive Uniform Manifold Approximation and Projection}},
+author = {Ko, Hyung-Kwon and Jo, Jaemin and Seo, Jinwook},
+year = {2020},
+publisher = {The Eurographics Association},
+ISBN = {978-3-03868-106-9},
+DOI = {10.2312/evs.20201061}
+}
+```
